@@ -1,5 +1,5 @@
 import { media } from '../api.js';
-import { clear, gear, h, icon } from '../dom.js';
+import { clear, gear, h, icon, photoThumb } from '../dom.js';
 import { GENERAL_ROOM, STATUS, STATUSES, count, eventDate, isoDate, shortDate } from '../format.js';
 import { isMember, loadMoreDone, refreshBoard, roomName, store, toggleRoom } from '../store.js';
 import { segmented } from '../ui/segmented.js';
@@ -63,7 +63,7 @@ function card(task, index) {
       h(
         'div',
         { class: 'card-thumb', style: { backgroundColor: task.cover.color } },
-        h('img', { src: media.thumb(task.cover.id), alt: '', loading: 'lazy', decoding: 'async', draggable: false }),
+        photoThumb(media.thumb(task.cover.id)),
       ),
   );
   if (firstPaint) el.style.setProperty('--i', String(index));

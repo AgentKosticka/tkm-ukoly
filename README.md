@@ -229,6 +229,7 @@ docker compose exec app node src/cli.js spravce JMENO
 - Menší obrázky se ukládají jen jednou: jako očištěný původní soubor (nebo bezeztrátový WebP), který se rovnou i zobrazuje. Zvláštní kopie pro zobrazení by u nich zabrala skoro tolik místa jako ony samy.
 - Server po zakódování archiv rozbalí a porovná s předlohou. Když nesedí nebo není menší, uloží očištěný původní soubor, takže archiv není větší než nahraná fotka. Výjimkou jsou dva vzácné případy, kdy soubor nejde očistit bez překódování a ukládají se pixely: JPEG s nestandardní strukturou a ztrátový WebP otočený přes EXIF.
 - Originál si přihlášený člen stáhne v prohlížeči fotek tlačítkem „Originál“.
+- Když se fotka nepodaří načíst (chybí soubor, úložiště fotek není dostupné), zůstane na jejím místě šedé pole s ikonou.
 
 Kolik to dělá: fotka z mobilu o velikosti 1,5 MB zabere na disku zhruba 1,4 MB (archiv 1,2 MB a k němu zmenšená verze s náhledem, dohromady kolem 0,2 MB). U větších fotek je úspora výraznější, u obrázků kolem 0,5–1 MB vyjde součet o něco větší než nahraný soubor. Víc bez ztráty kvality ušetřit nejde; JPEG je sám o sobě už hodně stlačený.
 

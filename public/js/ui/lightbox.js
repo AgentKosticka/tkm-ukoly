@@ -1,5 +1,5 @@
 import { media } from '../api.js';
-import { h, icon } from '../dom.js';
+import { BROKEN_PHOTO, h, icon } from '../dom.js';
 import { Spring, VelocityTracker, capturePointer, clamp, project, reducedMotion, rubberband } from '../spring.js';
 import { pushLayer } from './overlay.js';
 
@@ -49,9 +49,23 @@ export function openLightbox({ photos, index, thumbFor, canDownload, onDelete })
       const img = h('img', { class: 'lightbox-img', alt: '', draggable: false, decoding: 'async' });
       img.style.backgroundColor = photo.color;
       const slot = h('div', { class: 'lightbox-slot' }, img);
-      return { photo, slot, img, loaded: false, rect: null };
+      const s = { photo, slot, img, loaded: false, rect: null };
+      img.addEventListener('error', () => showBroken(s), { once: true });
+      return s;
     });
     track.replaceChildren(...slots.map((s) => s.slot));
+  }
+
+  /**
+   * Fotka se nenačetla: na jejím místě zůstane šedé pole s ikonou. Pole
+   * převezme polohu i rozměry obrázku, takže se dál otevírá, zavírá a listuje
+   * stejně jako fotka.
+   */
+  function showBroken(s) {
+    const box = h('div', { class: 'lightbox-img lightbox-broken', role: 'img', 'aria-label': BROKEN_PHOTO }, icon('imageOff'), h('span', null, BROKEN_PHOTO));
+    for (const name of ['left', 'top', 'width', 'height', 'transform', 'clipPath', 'opacity']) box.style[name] = s.img.style[name];
+    s.img.replaceWith(box);
+    s.img = box;
   }
 
   /** Fotka se načte, až když je na řadě nebo hned vedle. */

@@ -1,5 +1,5 @@
 import { api, media } from '../api.js';
-import { append, clear, gear, h, icon } from '../dom.js';
+import { append, clear, gear, h, icon, photoThumb } from '../dom.js';
 import { GENERAL_ROOM, STATUS, STATUSES, count, eventDate, fullDate, isoDate, megabytes } from '../format.js';
 import { back, route } from '../router.js';
 import { findTask, isMember, refreshBoard, removeTask, roomName, setRooms, store, upsertTask } from '../store.js';
@@ -408,7 +408,7 @@ function renderPhotos(view) {
           style: { backgroundColor: photo.color },
           onClick: () => showPhotos(view, photo),
         },
-        h('img', { src: media.thumb(photo.id), alt: '', loading: 'lazy', decoding: 'async', draggable: false }),
+        photoThumb(media.thumb(photo.id)),
       ),
     );
   }
