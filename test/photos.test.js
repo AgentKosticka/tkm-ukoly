@@ -49,14 +49,14 @@ describe('fotky', () => {
   after(() => ctx.stop());
 
   test('JPEG: náhledy ve WebP, archiv beze ztráty a bez metadat', async () => {
-    const input = await jpegWithExif({ width: 640, height: 480, orientation: 6 });
+    const input = await jpegWithExif({ width: 2000, height: 1500, orientation: 6 });
     assert.ok(input.includes(SECRET_MARKER), 'testovací fotka má obsahovat EXIF');
 
     const res = await user.upload(taskId, input, { filename: '../../zly nazev.jpg' });
     assert.equal(res.status, 201, JSON.stringify(res.json));
     const photo = res.json.photo;
     assert.match(photo.id, /^[A-Za-z0-9_-]{22}$/);
-    assert.deepEqual([photo.width, photo.height], [480, 640], 'rozměry po otočení podle EXIF');
+    assert.deepEqual([photo.width, photo.height], [1500, 2000], 'rozměry po otočení podle EXIF');
     assert.match(photo.color, /^#[0-9a-f]{6}$/);
 
     const row = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(photo.id);
@@ -70,7 +70,7 @@ describe('fotky', () => {
     assert.ok(files.every((name) => !name.includes('zly')), 'název od klienta se nepoužívá');
 
     // Náhled a zobrazovací verze jsou veřejné, otočené a bez metadat.
-    for (const [variant, limit] of [['thumb', 480], ['view', 2000]]) {
+    for (const [variant, limit] of [['thumb', 400], ['view', 1600]]) {
       const media = await ctx.client().get(`/media/${photo.id}/${variant}`);
       assert.equal(media.status, 200);
       assert.equal(media.headers['content-type'], 'image/webp');
@@ -100,13 +100,52 @@ describe('fotky', () => {
     assert.deepEqual(fs.readdirSync(ctx.config.tmpDir), [], 'dočasné soubory jsou uklizené');
   });
 
+  test('malá fotka se zobrazuje rovnou z archivu a nezabírá místo dvakrát', async () => {
+    const input = await jpegWithExif({ width: 800, height: 600, orientation: 6 });
+    const res = await user.upload(taskId, input);
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+    const id = res.json.photo.id;
+    const row = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(id);
+    // Archiv musí zůstat ve formátu, který prohlížeč umí zobrazit.
+    assert.equal(row.archive_format, 'jpeg');
+    assert.deepEqual(storedFiles(ctx, id).map((name) => name.slice(id.length + 1)), ['orig.jpg', 'thumb.webp']);
+
+    const view = await ctx.client().get(`/media/${id}/view`);
+    assert.equal(view.status, 200);
+    assert.equal(view.headers['content-type'], 'image/jpeg');
+    assert.equal(view.headers['x-content-type-options'], 'nosniff');
+    assert.ok(view.raw.equals(stripJpegMetadata(input, { orientation: 6 })), 'zobrazuje se očištěný originál');
+    assert.ok(!view.raw.includes(SECRET_MARKER));
+    assert.equal((await sharp(view.raw).metadata()).orientation, 6, 'orientace zůstala pro prohlížeč');
+
+    const thumb = await ctx.client().get(`/media/${id}/thumb`);
+    assert.equal(thumb.headers['content-type'], 'image/webp');
+    const onDisk = row.archive_bytes + thumb.raw.length;
+    assert.ok(onDisk < input.length * 1.25, `na disku ${onDisk} B, nahráno ${input.length} B`);
+  });
+
+  test('velké PNG s průhledností: archiv je pixelově shodný a menší', async () => {
+    const input = await pngWithAlpha({ width: 1700, height: 900 });
+    const res = await user.upload(taskId, input, { filename: 'velky.png', type: 'image/png' });
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+    const row = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(res.json.photo.id);
+    assert.equal(row.archive_format, ctx.photos.jxlAvailable ? 'jxl' : 'webp');
+    assert.ok(row.archive_bytes < input.length);
+    assert.equal(storedFiles(ctx, row.id).length, 3);
+    const original = await user.get(`/api/photos/${row.id}/original`);
+    const [a, b] = await Promise.all([sharp(input).raw().toBuffer(), sharp(original.raw).raw().toBuffer()]);
+    assert.ok(a.equals(b), 'pixely včetně průhlednosti jsou shodné');
+    const [ma, mb] = await Promise.all([sharp(input).metadata(), sharp(original.raw).metadata()]);
+    assert.ok(ma.icc.equals(mb.icc), 'barevný profil je shodný');
+  });
+
   test('PNG s průhledností: archiv je pixelově shodný a menší', async () => {
     const input = await pngWithAlpha();
     const res = await user.upload(taskId, input, { filename: 'snimek.png', type: 'image/png' });
     assert.equal(res.status, 201, JSON.stringify(res.json));
     const row = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(res.json.photo.id);
     assert.equal(row.source_format, 'png');
-    assert.equal(row.archive_format, ctx.photos.jxlAvailable ? 'jxl' : 'webp');
+    assert.ok(['webp', 'png'].includes(row.archive_format), 'malý obrázek zůstává zobrazitelný');
     assert.ok(row.archive_bytes < input.length);
 
     const original = await user.get(`/api/photos/${row.id}/original`);
@@ -296,10 +335,10 @@ describe('fotky', () => {
     const jpeg = await jpegWithExif({ width: 64, height: 64, orientation: 1 });
     const first = (await user.upload(taskId, jpeg)).json.photo.id;
     const second = (await user.upload(taskId, jpeg)).json.photo.id;
-    assert.equal(storedFiles(ctx, first).length, 3);
+    assert.equal(storedFiles(ctx, first).length, 2);
 
     assert.equal((await other.delete(`/api/photos/${first}`)).status, 403);
-    assert.equal(storedFiles(ctx, first).length, 3);
+    assert.equal(storedFiles(ctx, first).length, 2);
     assert.equal((await user.delete(`/api/photos/${first}`)).status, 200);
     assert.equal(storedFiles(ctx, first).length, 0);
     assert.equal((await ctx.client().get(`/media/${first}/thumb`)).status, 404);
@@ -313,7 +352,7 @@ describe('fotky', () => {
     const id = (await user.post('/api/tasks', { title: 'Dočasný' })).json.task.id;
     const jpeg = await jpegWithExif({ width: 64, height: 64, orientation: 1 });
     const photoId = (await user.upload(id, jpeg)).json.photo.id;
-    assert.equal(storedFiles(ctx, photoId).length, 3);
+    assert.equal(storedFiles(ctx, photoId).length, 2);
     assert.equal((await user.delete(`/api/tasks/${id}`)).status, 200);
     assert.equal(storedFiles(ctx, photoId).length, 0);
     assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM photos WHERE task_id = ?').get(id).n, 0);
@@ -341,6 +380,28 @@ describe('fotky', () => {
   });
 });
 
+describe('JPEG XL v provozním prostředí', () => {
+  // V běhovém obrazu (EXPECT_JXL=1) musí nástroje cjxl a djxl opravdu být.
+  // Jinde se test přeskočí a sada projde i záložní cestou.
+  test('nástroje jsou k dispozici a JPEG se archivuje v JPEG XL', { skip: process.env.EXPECT_JXL !== '1' }, async () => {
+    const ctx = await startApp();
+    try {
+      assert.equal(ctx.photos.jxlAvailable, true, 'cjxl/djxl nejsou v obrazu');
+      const user = await approvedUser(ctx, 'provozni');
+      const taskId = (await user.post('/api/tasks', { title: 't' })).json.task.id;
+      const jpeg = await jpegWithExif({ width: 2000, height: 1500 });
+      const id = (await user.upload(taskId, jpeg)).json.photo.id;
+      const row = ctx.db.prepare('SELECT archive_format, archive_bytes FROM photos WHERE id = ?').get(id);
+      assert.equal(row.archive_format, 'jxl');
+      assert.ok(row.archive_bytes < jpeg.length);
+      const original = await user.get(`/api/photos/${id}/original`);
+      assert.ok(original.raw.equals(stripJpegMetadata(jpeg, { orientation: 6 })));
+    } finally {
+      await ctx.stop();
+    }
+  });
+});
+
 describe('fotky bez JPEG XL (záložní cesta)', () => {
   let ctx;
   let user;
@@ -352,7 +413,18 @@ describe('fotky bez JPEG XL (záložní cesta)', () => {
   });
   after(() => ctx.stop());
 
-  test('JPEG se uloží očištěný, PNG jako bezeztrátový WebP', async () => {
+  test('velký JPEG se uloží očištěný a dostane zobrazovací verzi', async () => {
+    const jpeg = await jpegWithExif({ width: 2000, height: 1500 });
+    const id = (await user.upload(taskId, jpeg)).json.photo.id;
+    const row = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(id);
+    assert.equal(row.archive_format, 'jpeg');
+    assert.equal(storedFiles(ctx, id).length, 3);
+    const view = await ctx.client().get(`/media/${id}/view`);
+    assert.equal(view.headers['content-type'], 'image/webp');
+    assert.ok(view.raw.length < row.archive_bytes);
+  });
+
+  test('JPEG se uloží očištěný, PNG bezeztrátově ve formátu pro prohlížeč', async () => {
     assert.equal(ctx.photos.jxlAvailable, false);
     const jpeg = await jpegWithExif();
     const a = (await user.upload(taskId, jpeg)).json.photo.id;
@@ -364,9 +436,10 @@ describe('fotky bez JPEG XL (záložní cesta)', () => {
     const png = await pngWithAlpha();
     const b = (await user.upload(taskId, png, { type: 'image/png' })).json.photo.id;
     const rowB = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(b);
-    assert.equal(rowB.archive_format, 'webp');
+    assert.ok(['webp', 'png'].includes(rowB.archive_format));
+    assert.ok(rowB.archive_bytes <= png.length);
     const originalB = await user.get(`/api/photos/${b}/original`);
-    assert.equal(originalB.headers['content-type'], 'image/webp');
+    assert.equal(originalB.headers['content-type'], `image/${rowB.archive_format}`);
     const [x, y] = await Promise.all([sharp(png).raw().toBuffer(), sharp(originalB.raw).raw().toBuffer()]);
     assert.ok(x.equals(y));
     assert.ok(!allStoredBytes(ctx).includes(SECRET_MARKER));

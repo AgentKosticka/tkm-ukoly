@@ -21,6 +21,8 @@ docker compose up -d --build
 
 Web pak běží na portu 80 tohoto stroje.
 
+Repozitář klonujte přes HTTPS, ne přes SSH. Aktualizační služba SSH klíče nemá; k soukromému repozitáři se dostane tokenem (`GIT_TOKEN` v `.env`).
+
 ### První přihlášení
 
 Při prvním startu se založí účet správce `admin`. Heslo najdete v logu:
@@ -51,6 +53,8 @@ Služba `updater` každých pět minut zjistí, jestli v repozitáři, ze které
 4. když se sestavení nebo start nepovede, vrátí předchozí verzi a vadnou revizi už nezkouší, dokud v repozitáři nepřibude oprava.
 
 Průběh je v logu: `docker compose logs updater`.
+
+**Po prvním nasazení si aktualizace vyzkoušejte:** pošlete do repozitáře drobnou změnu (třeba překlep v README) a sledujte `docker compose logs -f updater`. Do pěti minut má přijít řádek „Nová verze“ a po sestavení „Hotovo“.
 
 Místní neuložené úpravy sledovaných souborů ani přepsanou historii služba nepřepíše; v logu řekne, že je potřeba ruční zásah. Před změnou struktury databáze si aplikace sama uloží zálohu do `/data/backups`.
 
@@ -97,13 +101,16 @@ docker compose exec app node src/cli.js spravce JMENO
 - Přijímají se jen JPEG, PNG a WebP do 20 MB. Typ se pozná z obsahu souboru, ne z přípony.
 - Server každý soubor celý dekóduje. Poškozené soubory, animace a obrázky s obřím rozlišením odmítne.
 - Z fotek se odstraní metadata včetně polohy GPS. Zůstane jen barevný profil a orientace.
-- Na stránce se zobrazuje zmenšená verze ve WebP (náhled 480 px, detail 2000 px).
-- **Originál se archivuje beze ztráty** ve formátu JPEG XL:
+- Na stránce se zobrazuje náhled (400 px) a u větších fotek zmenšená verze (1600 px), obojí ve WebP.
+- **Originál se archivuje beze ztráty.** Fotky větší než 1600 px ve formátu JPEG XL:
   - JPEG se přebalí tak, že je zhruba o pětinu menší a jde z něj vrátit původní soubor bajt po bajtu.
   - PNG a bezeztrátový WebP se uloží po pixelech, typicky na třetinu původní velikosti.
   - Ztrátový WebP zůstává, jak je, protože bezeztrátové překódování by ho několikanásobně zvětšilo.
-- Server po zakódování archiv rozbalí a porovná s předlohou. Když nesedí nebo není menší, uloží očištěný původní soubor. Archiv tak nikdy není větší než nahraná fotka.
+- Menší obrázky se ukládají jen jednou: jako očištěný původní soubor (nebo bezeztrátový WebP), který se rovnou i zobrazuje. Zvláštní kopie pro zobrazení by u nich zabrala skoro tolik místa jako ony samy.
+- Server po zakódování archiv rozbalí a porovná s předlohou. Když nesedí nebo není menší, uloží očištěný původní soubor, takže archiv není větší než nahraná fotka. Výjimkou jsou dva vzácné případy, kdy soubor nejde očistit bez překódování a ukládají se pixely: JPEG s nestandardní strukturou a ztrátový WebP otočený přes EXIF.
 - Originál si přihlášený člen stáhne v prohlížeči fotek tlačítkem „Originál“.
+
+Kolik to dělá: fotka z mobilu o velikosti 1,5 MB zabere na disku zhruba 1,4 MB (archiv 1,2 MB a k němu zmenšená verze s náhledem, dohromady kolem 0,2 MB). U větších fotek je úspora výraznější, u obrázků kolem 0,5–1 MB vyjde součet o něco větší než nahraný soubor. Víc bez ztráty kvality ušetřit nejde; JPEG je sám o sobě už hodně stlačený.
 
 Kódování do JPEG XL potřebuje zhruba 25–50 MB paměti na megapixel. Fotky nad 24 megapixelů se proto ukládají jako očištěný JPEG nebo PNG; hranici mění `JXL_MAX_MEGAPIXELS`.
 

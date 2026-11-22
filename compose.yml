@@ -12,7 +12,9 @@ name: tkm-ukoly
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: runtime
     image: tkm-ukoly-app
     restart: unless-stopped
     init: true

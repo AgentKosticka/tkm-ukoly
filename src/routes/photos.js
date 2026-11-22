@@ -168,7 +168,7 @@ export default async function photoRoutes(app, { ctx }) {
 /** Veřejné náhledy a zobrazovací verze; registruje se mimo /api. */
 export async function mediaRoutes(app, { ctx }) {
   const { db, photos } = ctx;
-  const exists = db.prepare('SELECT 1 FROM photos WHERE id = ?').pluck();
+  const getPhoto = db.prepare('SELECT id, archive_format FROM photos WHERE id = ?');
 
   app.get(
     '/media/:id/:variant',
@@ -187,23 +187,18 @@ export async function mediaRoutes(app, { ctx }) {
     },
     async (request, reply) => {
       const { id, variant } = request.params;
-      const file = exists.get(id) ? photos.derivativePath(id, variant) : null;
-      let stat;
-      try {
-        stat = file ? await fsp.stat(file) : null;
-      } catch {
-        stat = null;
-      }
-      if (!stat) {
+      const photo = getPhoto.get(id);
+      const display = photo ? await photos.displayFile(photo, variant) : null;
+      if (!display) {
         reply.header('Cache-Control', 'no-store');
         throw notFound('Fotka neexistuje');
       }
       reply
-        .header('Content-Type', 'image/webp')
-        .header('Content-Length', stat.size)
+        .header('Content-Type', display.contentType)
+        .header('Content-Length', display.size)
         // Soubor pod daným identifikátorem se nikdy nemění.
         .header('Cache-Control', 'public, max-age=31536000, immutable');
-      return reply.send(fs.createReadStream(file));
+      return reply.send(fs.createReadStream(display.file));
     },
   );
 }

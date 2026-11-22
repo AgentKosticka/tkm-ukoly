@@ -262,3 +262,44 @@ describe('hlavičky a statické soubory', () => {
     }
   });
 });
+
+describe('omezení počtu požadavků', () => {
+  test('po vyčerpání limitu přijde 429 se srozumitelnou odpovědí', async () => {
+    const ctx = await startApp({ rateLimits: true });
+    try {
+      const c = ctx.client();
+      const statuses = [];
+      for (let i = 0; i < 10; i += 1) {
+        const res = await c.post('/api/auth/register', { username: `zajemce${i}`, password: PASSWORD });
+        statuses.push(res.status);
+        if (res.status === 429) {
+          assert.equal(res.json.error.code, 'rate_limited');
+          assert.match(res.json.error.message, /Příliš mnoho požadavků/);
+          assert.ok(Number(res.headers['retry-after']) > 0);
+        }
+      }
+      assert.deepEqual(statuses.slice(0, 8), Array(8).fill(201), 'prvních osm registrací projde');
+      assert.deepEqual(statuses.slice(8), [429, 429], 'další už ne');
+      assert.equal(ctx.db.prepare("SELECT COUNT(*) AS n FROM users WHERE status = 'pending'").get().n, 8);
+
+      // Limit se počítá na adresu; čtení úkolů jím není dotčeno.
+      assert.equal((await c.get('/api/tasks')).status, 200);
+    } finally {
+      await ctx.stop();
+    }
+  });
+
+  test('počet čekajících registrací má strop', async () => {
+    const ctx = await startApp({ maxPendingUsers: 2 });
+    try {
+      const c = ctx.client();
+      assert.equal((await c.post('/api/auth/register', { username: 'prvni', password: PASSWORD })).status, 201);
+      assert.equal((await c.post('/api/auth/register', { username: 'druhy', password: PASSWORD })).status, 201);
+      const third = await c.post('/api/auth/register', { username: 'treti', password: PASSWORD });
+      assert.equal(third.status, 503);
+      assert.equal(third.json.error.code, 'registrations_paused');
+    } finally {
+      await ctx.stop();
+    }
+  });
+});

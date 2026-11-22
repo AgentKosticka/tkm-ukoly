@@ -12,8 +12,9 @@ import { stripWebpMetadata } from './webp.js';
 sharp.cache(false);
 sharp.concurrency(2);
 
-const VIEW_SIZE = 2000;
-const THUMB_SIZE = 480;
+// Zmenšené verze pro zobrazení. Jsou ztrátové a malé; originál je v archivu.
+const VIEW_SIZE = 1600;
+const THUMB_SIZE = 400;
 const COMPARE_STRIP_PIXELS = 8_000_000;
 const PHOTO_ID = /^[A-Za-z0-9_-]{22}$/;
 
@@ -75,7 +76,9 @@ export async function createPhotoStore(config, log) {
     return true;
   }
 
-  async function archiveJpeg(input, meta, work) {
+  // `direct` znamená, že se archiv bude rovnou i zobrazovat (malé fotky),
+  // takže musí zůstat ve formátu, který prohlížeč umí: bez JPEG XL.
+  async function archiveJpeg(input, meta, work, direct) {
     let clean;
     try {
       clean = stripJpegMetadata(input, { orientation: meta.orientation ?? 1 });
@@ -85,10 +88,10 @@ export async function createPhotoStore(config, log) {
       }
     } catch (err) {
       log.warn({ err: err.message }, 'JPEG nejde očistit beze ztráty, ukládám pixely');
-      return archivePixels(input, meta, work, null);
+      return archivePixels(input, meta, work, null, direct);
     }
 
-    if (jxl.available && meta.width * meta.height <= config.jxlMaxPixels) {
+    if (!direct && jxl.available && meta.width * meta.height <= config.jxlMaxPixels) {
       try {
         const source = path.join(work, 'clean.jpg');
         const packed = path.join(work, 'archive.jxl');
@@ -114,7 +117,7 @@ export async function createPhotoStore(config, log) {
    * Bezeztrátové uložení pixelů. `keepAsIs` je už očištěný původní soubor
    * (bezeztrátový WebP), který se použije, pokud vyjde nejmenší.
    */
-  async function archivePixels(input, meta, work, keepAsIs) {
+  async function archivePixels(input, meta, work, keepAsIs, direct) {
     const depth = meta.depth === 'ushort' ? 'ushort' : 'uchar';
     // Referenční podoba: otočená podle EXIF, bez metadat, se zachovaným barevným profilem.
     const reference = await open(input).rotate().keepIccProfile().png({ compressionLevel: 6 }).toBuffer();
@@ -130,7 +133,7 @@ export async function createPhotoStore(config, log) {
       }
     }
 
-    if (jxl.available && meta.width * meta.height <= config.jxlMaxPixels / 2) {
+    if (!direct && jxl.available && meta.width * meta.height <= config.jxlMaxPixels / 2) {
       try {
         const source = path.join(work, 'pixels.png');
         const packed = path.join(work, 'archive.jxl');
@@ -171,7 +174,7 @@ export async function createPhotoStore(config, log) {
     return candidates[0];
   }
 
-  async function archivePng(input, meta, work) {
+  async function archivePng(input, meta, work, direct) {
     let stripped;
     try {
       stripped = stripPngMetadata(input);
@@ -182,10 +185,10 @@ export async function createPhotoStore(config, log) {
     // Původní soubor bez metadat je záloha pro případ, že by nové zakódování
     // vyšlo větší (typicky u obrázků s paletou).
     const upright = (meta.orientation ?? 1) === 1;
-    return archivePixels(input, meta, work, upright ? { format: 'png', data: stripped.data } : null);
+    return archivePixels(input, meta, work, upright ? { format: 'png', data: stripped.data } : null, direct);
   }
 
-  async function archiveWebp(input, meta, work) {
+  async function archiveWebp(input, meta, work, direct) {
     let stripped;
     try {
       stripped = stripWebpMetadata(input);
@@ -196,7 +199,7 @@ export async function createPhotoStore(config, log) {
     const rotated = (meta.orientation ?? 1) !== 1;
     if (stripped.lossless || rotated) {
       const keep = stripped.lossless && !rotated ? { format: 'webp', data: stripped.data } : null;
-      return archivePixels(input, meta, work, keep);
+      return archivePixels(input, meta, work, keep, direct);
     }
     // Ztrátový WebP by bezeztrátovým překódováním několikanásobně narostl,
     // proto zůstává, jak je, jen bez metadat.
@@ -233,16 +236,20 @@ export async function createPhotoStore(config, log) {
     const work = path.join(config.tmpDir, id);
     await fsp.mkdir(work, { mode: 0o700 });
     try {
+      // Malá fotka se zobrazuje rovnou z archivu; zvláštní zobrazovací verze
+      // by zabrala skoro tolik místa jako ona sama.
+      const direct = Math.max(meta.width, meta.height) <= VIEW_SIZE;
+
       // Vytvoření náhledů zároveň ověří, že soubor jde celý dekódovat.
-      let view;
+      let view = null;
       let thumb;
       let color;
       try {
         const resize = (size) => ({ width: size, height: size, fit: 'inside', withoutEnlargement: true });
-        view = await open(input).rotate().resize(resize(VIEW_SIZE)).webp({ quality: 82, effort: 4 }).toBuffer({
-          resolveWithObject: true,
-        });
-        thumb = await open(input).rotate().resize(resize(THUMB_SIZE)).webp({ quality: 74, effort: 4 }).toBuffer();
+        if (!direct) {
+          view = await open(input).rotate().resize(resize(VIEW_SIZE)).webp({ quality: 80, effort: 5 }).toBuffer();
+        }
+        thumb = await open(input).rotate().resize(resize(THUMB_SIZE)).webp({ quality: 72, effort: 5 }).toBuffer();
         const pixel = await sharp(thumb).flatten({ background: '#ffffff' }).resize(1, 1, { fit: 'fill' }).raw().toBuffer();
         color = `#${pixel.subarray(0, 3).toString('hex')}`;
       } catch (err) {
@@ -256,16 +263,16 @@ export async function createPhotoStore(config, log) {
       const height = turned ? meta.width : meta.height;
 
       let archive;
-      if (type === 'jpeg') archive = await archiveJpeg(input, meta, work);
-      else if (type === 'webp') archive = await archiveWebp(input, meta, work);
-      else archive = await archivePng(input, meta, work);
+      if (type === 'jpeg') archive = await archiveJpeg(input, meta, work, direct);
+      else if (type === 'webp') archive = await archiveWebp(input, meta, work, direct);
+      else archive = await archivePng(input, meta, work, direct);
 
       const dir = path.dirname(fileFor(id, 'thumb'));
       await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
       const archiveTarget = fileFor(id, 'orig', archive.format);
       if (archive.file) await fsp.rename(archive.file, archiveTarget);
       else await fsp.writeFile(archiveTarget, archive.data, { mode: 0o600, flag: 'wx' });
-      await fsp.writeFile(fileFor(id, 'view'), view.data, { mode: 0o600, flag: 'wx' });
+      if (view) await fsp.writeFile(fileFor(id, 'view'), view, { mode: 0o600, flag: 'wx' });
       await fsp.writeFile(fileFor(id, 'thumb'), thumb, { mode: 0o600, flag: 'wx' });
 
       return {
@@ -304,10 +311,20 @@ export async function createPhotoStore(config, log) {
 
     remove: removeFiles,
 
-    /** Cesta k náhledu nebo zobrazovací verzi (obojí WebP). */
-    derivativePath(id, variant) {
-      if (!isPhotoId(id) || (variant !== 'thumb' && variant !== 'view')) return null;
-      return fileFor(id, variant);
+    /**
+     * Soubor pro zobrazení na stránce: náhled, nebo větší verze. Malé fotky
+     * větší verzi nemají a zobrazují se rovnou z archivu.
+     */
+    async displayFile(photo, variant) {
+      if (!isPhotoId(photo.id) || (variant !== 'thumb' && variant !== 'view')) return null;
+      const stat = (file) => fsp.stat(file).then((info) => info, () => null);
+      const derived = fileFor(photo.id, variant);
+      let info = await stat(derived);
+      if (info) return { file: derived, size: info.size, contentType: 'image/webp' };
+      if (variant !== 'view' || photo.archive_format === 'jxl') return null;
+      const archived = fileFor(photo.id, 'orig', photo.archive_format);
+      info = await stat(archived);
+      return info ? { file: archived, size: info.size, contentType: CONTENT_TYPE[photo.archive_format] } : null;
     },
 
     /**

@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-# ── Běhový obraz ──────────────────────────────────────────────────────────
-FROM node:24-trixie-slim AS runtime
+# ── Společný základ ───────────────────────────────────────────────────────
+FROM node:24-trixie-slim AS base
 
 # libjxl-tools dodává cjxl a djxl pro bezeztrátový archiv fotek.
 RUN apt-get update \
@@ -32,6 +32,19 @@ COPY public ./public
 # Data (databáze, fotky, zálohy) žijí ve svazku; aplikace běží bez práv roota.
 RUN mkdir -p /data && chown node:node /data
 USER node
+
+# ── Testy ─────────────────────────────────────────────────────────────────
+# docker build --target test .   pustí celou sadu testů ve stejném prostředí,
+# v jakém aplikace poběží. EXPECT_JXL=1 vyžaduje, aby nástroje JPEG XL
+# opravdu fungovaly; bez nich by testy jinak prošly záložní cestou.
+# Tahle fáze se při běžném sestavení přeskakuje.
+FROM base AS test
+COPY test ./test
+ENV EXPECT_JXL=1
+RUN npm test
+
+# ── Běhový obraz (výchozí cíl) ────────────────────────────────────────────
+FROM base AS runtime
 VOLUME /data
 EXPOSE 3000
 
@@ -39,11 +52,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["node", "src/healthcheck.js"]
 
 CMD ["node", "src/server.js"]
-
-# ── Testy ─────────────────────────────────────────────────────────────────
-# docker build --target test .   spustí celou sadu testů ve stejném prostředí,
-# v jakém aplikace poběží, včetně skutečných nástrojů JPEG XL.
-FROM runtime AS test
-COPY test ./test
-ENV NODE_ENV=test
-RUN npm test
