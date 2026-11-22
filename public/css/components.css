@@ -1,0 +1,619 @@
+/* ───── Horní lišta: průsvitná vrstva, obsah se posouvá pod ní ───── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--topbar);
+  padding: 0 var(--page-x);
+  padding-top: env(safe-area-inset-top);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bar);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--medium) var(--ease);
+}
+/* Dělicí linka se objeví, až když pod lištou opravdu něco je. */
+.topbar.scrolled {
+  border-bottom-color: var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-right: auto;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+}
+.brand-mark {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  background: var(--logo);
+  -webkit-mask: url('/img/itv-mask.png') center / contain no-repeat;
+  mask: url('/img/itv-mask.png') center / contain no-repeat;
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+.brand-name {
+  font: 600 1.0625rem/1.15 var(--font-display);
+  color: var(--navy);
+}
+.brand-org {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* ───── Tlačítka ───── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.25rem;
+  padding: 0 0.875rem;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease),
+    transform 100ms ease-out,
+    opacity var(--fast) var(--ease);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn .icon {
+  margin-left: -0.125rem;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-press);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+.btn-quiet {
+  color: var(--text-2);
+}
+.btn-quiet:hover:not(:disabled),
+.btn-quiet[aria-expanded='true'] {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.btn-danger {
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.btn-lg {
+  height: 2.75rem;
+  padding: 0 1.25rem;
+  font-size: 0.9375rem;
+}
+.btn-block {
+  width: 100%;
+}
+.btn-icon {
+  width: 2.25rem;
+  padding: 0;
+}
+.btn-icon .icon {
+  margin: 0;
+}
+
+/* Počet u odkazu: tichý text, žádná svítící bublina. */
+.count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.count-alert {
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+
+/* ───── Formuláře ───── */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.field + .field {
+  margin-top: 1rem;
+}
+.label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.input,
+.textarea {
+  width: 100%;
+  padding: 0 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--fast) var(--ease),
+    box-shadow var(--fast) var(--ease);
+}
+.input {
+  height: 2.5rem;
+}
+.textarea {
+  padding: 0.625rem 0.75rem;
+  min-height: 7.5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-3);
+}
+.input:focus-visible,
+.textarea:focus-visible {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px var(--navy-soft);
+  border-radius: var(--radius-sm);
+}
+.input[aria-invalid='true'],
+.textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.hint {
+  font-size: 0.8125rem;
+  color: var(--text-3);
+}
+.error-text {
+  font-size: 0.8125rem;
+  color: var(--danger);
+}
+.form-error {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+.form-error .icon {
+  margin-top: 0.125rem;
+}
+
+/* ───── Přepínač s posuvným palcem ───── */
+
+.segmented {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 0.1875rem;
+  background: var(--raised);
+  border-radius: 0.625rem;
+  isolation: isolate;
+}
+.segmented-thumb {
+  position: absolute;
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+  left: 0;
+  width: 0;
+  z-index: -1;
+  background: var(--surface);
+  border-radius: 0.4375rem;
+  box-shadow:
+    var(--shadow-1),
+    0 0 0 1px var(--line);
+  will-change: transform, width;
+}
+.segmented-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.625rem;
+  border-radius: 0.4375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+  transition: color var(--fast) var(--ease);
+}
+.segmented-option[aria-checked='true'],
+.segmented-option[aria-selected='true'] {
+  color: var(--text);
+}
+.segmented-option:disabled {
+  cursor: default;
+}
+.segmented.touch .segmented-option {
+  height: 2.5rem;
+}
+
+/* ───── Stav úkolu: ozubené kolo podle log ITV a TKM ───── */
+
+.gear {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+}
+.gear-body {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.gear-fill {
+  fill: currentColor;
+  stroke: none;
+}
+.gear-check {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.status-todo {
+  color: var(--todo);
+}
+.status-doing {
+  color: var(--doing);
+}
+.status-done {
+  color: var(--done);
+}
+
+/* ───── Nabídka ───── */
+
+.menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 12.5rem;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  transform-origin: var(--origin, top right);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  height: 2.25rem;
+  padding: 0 0.625rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  text-align: left;
+  color: var(--text);
+  transition: background-color var(--fast) var(--ease);
+}
+.menu-item .icon {
+  color: var(--text-3);
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--raised);
+  box-shadow: none;
+}
+.menu-item.danger,
+.menu-item.danger .icon {
+  color: var(--danger);
+}
+.menu-label {
+  padding: 0.5rem 0.625rem 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+.menu-separator {
+  height: 1px;
+  margin: 0.25rem 0.625rem;
+  background: var(--line);
+}
+
+/* ───── Vrstvy: clona, panel, dialog ───── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+  opacity: 0;
+  will-change: opacity;
+}
+
+.sheet {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  will-change: transform;
+  outline: none;
+  overscroll-behavior: contain;
+}
+/* Na šířku: panel přijíždí zprava a tam také odjíždí. */
+.sheet.side {
+  top: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  width: min(38rem, calc(100vw - 1.5rem));
+  border-radius: var(--radius-lg);
+}
+/* Na mobilu: list vyjíždí zdola a dá se stáhnout zpět. */
+.sheet.bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(100dvh - 1.5rem - env(safe-area-inset-top));
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  /* Aby při přetažení nahoru nebyla pod listem vidět mezera. */
+  padding-bottom: 0;
+}
+.sheet.bottom::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 50vh;
+  background: var(--surface);
+}
+.sheet-grabber {
+  flex: none;
+  display: none;
+  justify-content: center;
+  padding: 0.5rem 0 0.25rem;
+  touch-action: none;
+  cursor: grab;
+}
+.sheet.bottom .sheet-grabber {
+  display: flex;
+}
+.sheet-grabber::before {
+  content: '';
+  width: 2.25rem;
+  height: 0.3125rem;
+  border-radius: 0.3125rem;
+  background: var(--line-strong);
+}
+.sheet-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.75rem 1.5rem;
+  min-height: 3.5rem;
+}
+.sheet.bottom .sheet-header {
+  padding: 0.25rem 0.5rem 0.5rem 1rem;
+  touch-action: none;
+}
+.sheet-header .spacer {
+  flex: 1;
+}
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 1.5rem 2rem;
+  -webkit-overflow-scrolling: touch;
+}
+.sheet.bottom .sheet-body {
+  padding: 0 1rem calc(2rem + env(safe-area-inset-bottom));
+}
+
+.dialog-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 51;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.scrim.over {
+  z-index: 50;
+}
+.dialog {
+  width: min(26rem, 100%);
+  padding: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  will-change: transform, opacity;
+  outline: none;
+}
+.dialog.wide {
+  width: min(32rem, 100%);
+}
+.dialog-title {
+  font: 600 1.375rem/1.2 var(--font-display);
+  letter-spacing: -0.01em;
+}
+.dialog-text {
+  margin-top: 0.5rem;
+  color: var(--text-2);
+}
+.dialog-body {
+  margin-top: 1.25rem;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+.dialog-actions.stack {
+  flex-direction: column;
+}
+.dialog-logos {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.dialog-logos .brand-mark {
+  width: 3rem;
+  height: 3rem;
+}
+.dialog-logos img {
+  height: 2.5rem;
+  width: auto;
+}
+.dialog-switch {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--text-2);
+  text-align: center;
+}
+.link {
+  color: var(--navy);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--navy) 35%, transparent);
+  text-underline-offset: 0.1875rem;
+  border-radius: 0.1875rem;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Jednorázové heslo: čitelné, snadno označitelné. */
+.secret {
+  display: block;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  font: 500 1rem/1.4 var(--font-mono);
+  text-align: center;
+  user-select: all;
+  word-break: break-all;
+}
+
+/* ───── Krátká oznámení ───── */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: min(26rem, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: var(--text);
+  color: var(--bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  font-size: 0.875rem;
+  pointer-events: auto;
+  will-change: transform, opacity;
+}
+.toast-action {
+  flex: none;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 0.1875rem;
+}
+
+/* ───── Patička ───── */
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  width: 100%;
+  max-width: 96rem;
+  margin: 0 auto;
+  padding: 1.5rem var(--page-x) calc(1.5rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
+  color: var(--text-3);
+}
+.footer img {
+  height: 2rem;
+  width: auto;
+}
+.footer-text {
+  flex: 1;
+  min-width: 14rem;
+}
+
+@media (max-width: 40rem) {
+  .brand-org {
+    display: none;
+  }
+  .hide-narrow {
+    display: none;
+  }
+}
+@media (min-width: 40.0625rem) {
+  .only-narrow {
+    display: none;
+  }
+}
