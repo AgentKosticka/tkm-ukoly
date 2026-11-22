@@ -1,0 +1,25 @@
+{
+  "name": "tkm-ukoly",
+  "version": "1.0.0",
+  "description": "Úkolníček pro ITV a TKM Litoměřice",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.5",
+    "@fastify/multipart": "10.1.9",
+    "@fastify/proxy-addr": "5.1.3",
+    "@fastify/rate-limit": "11.3.0",
+    "@fastify/static": "10.1.12",
+    "better-sqlite3": "13.2.0",
+    "fastify": "5.12.8",
+    "sharp": "0.35.5"
+  }
+}
