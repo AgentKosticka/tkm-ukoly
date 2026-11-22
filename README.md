@@ -8,6 +8,21 @@ Webová nástěnka úkolů pro Technický klub mládeže a Institut technického
 
 Rozhraní je česky a drží se vizuálu [technickyklub.cz](https://www.technickyklub.cz/): barvy, písma i obě loga.
 
+## Ukázka
+
+![Nástěnka se třemi sloupci: nesplněno, pracuje se, splněno](docs/nastenka.webp)
+
+![Detail úkolu s přepínačem stavu, popisem, fotkami a historií](docs/detail.webp)
+
+<p>
+  <img src="docs/mobil-nastenka.webp" alt="Nástěnka na mobilu" width="270" />
+  <img src="docs/mobil-detail.webp" alt="Detail úkolu na mobilu" width="270" />
+</p>
+
+![Nástěnka v tmavém režimu](docs/nastenka-tmava.webp)
+
+Snímky ukazují smyšlené úkoly a účty. Fotky v nich pocházejí z webu technickyklub.cz.
+
 ## Spuštění
 
 Potřebujete stroj s Dockerem (včetně Docker Compose) a gitem.
@@ -164,6 +179,7 @@ src/          server: účty, úkoly, fotky
 public/       rozhraní: čisté ES moduly a CSS, bez sestavovacího kroku
 test/         testy serveru
 deploy/       Caddy a aktualizační služba
+docs/         snímky pro tento přehled
 compose.yml   provozní sestava
 ```
 
