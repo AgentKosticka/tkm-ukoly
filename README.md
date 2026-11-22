@@ -160,6 +160,34 @@ Síťový disk se může odmlčet, proto se zapojuje o úroveň níž: `PHOTOS_D
    PHOTOS_SUBDIR=nas/fotky
    ```
 
+4. Připojení při startu serveru se nemusí povést (síť ještě nemá adresu, disk je vypnutý) a systém ho sám znovu nezkouší. Přidejte proto časovač, který disk každou minutu připojí, pokud připojený není. Soubor `/etc/systemd/system/ukolnicek-nas.service`:
+
+   ```
+   [Unit]
+   Description=Připojí síťový disk s fotkami, pokud připojený není
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=oneshot
+   ExecStart=/bin/sh -c "findmnt -n /srv/ukolnicek/nas >/dev/null || mount /srv/ukolnicek/nas || exit 0"
+   TimeoutStartSec=90
+   ```
+
+   a `/etc/systemd/system/ukolnicek-nas.timer`:
+
+   ```
+   [Timer]
+   OnBootSec=15s
+   OnUnitActiveSec=60s
+   AccuracySec=5s
+
+   [Install]
+   WantedBy=timers.target
+   ```
+
+   Zapněte ho příkazem `systemctl enable --now ukolnicek-nas.timer`.
+
 Jak se to chová, když disk není k dispozici:
 
 - Aplikace běží dál a jde i restartovat a aktualizovat. Úkoly fungují, místo fotek je šedé pole s ikonou a nahrávání hlásí, že úložiště není dostupné.
