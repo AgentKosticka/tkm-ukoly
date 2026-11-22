@@ -1,5 +1,6 @@
 import { api } from '../api.js';
-import { clear, h, icon } from '../dom.js';
+import { append, clear, h, icon } from '../dom.js';
+import { canInstall, install } from '../pwa.js';
 import { navigate } from '../router.js';
 import { isAdmin, isMember, refreshBoard, setMe, store } from '../store.js';
 import { openMenu } from '../ui/menu.js';
@@ -92,7 +93,7 @@ async function logout() {
 }
 
 export function renderFooter() {
-  clear(document.getElementById('footer')).append(
+  append(clear(document.getElementById('footer')), [
     h('img', { src: '/img/tkm.png', alt: 'Technický klub mládeže', width: '480', height: '264', loading: 'lazy' }),
     h(
       'p',
@@ -100,7 +101,10 @@ export function renderFooter() {
       'Institut technického vzdělávání, z. ú. · Sovova 480/2, Litoměřice · ',
       h('a', { class: 'link', href: 'https://www.technickyklub.cz/', rel: 'noopener noreferrer', target: '_blank' }, 'technickyklub.cz'),
     ),
-  );
+    // Jen když to prohlížeč umí a aplikace ještě nainstalovaná není.
+    canInstall() &&
+      h('button', { class: 'btn btn-secondary', type: 'button', onClick: () => install() }, icon('download'), 'Nainstalovat aplikaci'),
+  ]);
 }
 
 // Linka pod lištou se ukáže až ve chvíli, kdy pod ní něco projíždí.

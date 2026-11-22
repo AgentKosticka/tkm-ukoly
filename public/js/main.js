@@ -1,4 +1,5 @@
 import { setUnauthenticatedHandler } from './api.js';
+import { onInstallChange, startPwa } from './pwa.js';
 import { onRoute, route } from './router.js';
 import { refreshBoard, refreshMe, store, subscribe } from './store.js';
 import { hasOverlay } from './ui/overlay.js';
@@ -97,4 +98,6 @@ function refreshIfIdle() {
 setInterval(refreshIfIdle, REFRESH_MS);
 document.addEventListener('visibilitychange', refreshIfIdle);
 
+onInstallChange(renderFooter);
+startPwa();
 start();

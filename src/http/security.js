@@ -13,6 +13,7 @@ const CONTENT_SECURITY_POLICY = [
   "font-src 'self'",
   "connect-src 'self'",
   "manifest-src 'self'",
+  "worker-src 'self'",
   "form-action 'self'",
   "base-uri 'none'",
   "frame-ancestors 'none'",

@@ -7,7 +7,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scroll-padding-top: calc(var(--topbar) + 1rem);
+  scroll-padding-top: calc(var(--topbar-total) + 1rem);
 }
 
 body {
@@ -35,7 +35,7 @@ main {
   width: 100%;
   max-width: 96rem;
   margin: 0 auto;
-  padding: 2rem var(--page-x) 4rem;
+  padding: 2rem var(--page-right) 4rem var(--page-left);
   outline: none;
 }
 

@@ -54,6 +54,25 @@
   text-align: right;
 }
 
+/* ───── Upozornění na neaktuální stav ───── */
+
+.stale {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 1.25rem;
+  padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.stale-text {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ───── Výběr místností ───── */
 
 .room-filter {
@@ -343,8 +362,8 @@ html.dragging-card * {
   .room-filter {
     flex-wrap: nowrap;
     overflow-x: auto;
-    margin: 0 calc(var(--page-x) * -1) 0.5rem;
-    padding: 0.25rem var(--page-x);
+    margin: 0 calc(var(--page-right) * -1) 0.5rem calc(var(--page-left) * -1);
+    padding: 0.25rem var(--page-right) 0.25rem var(--page-left);
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
@@ -357,7 +376,7 @@ html.dragging-card * {
   .board-tabs {
     display: block;
     position: sticky;
-    top: calc(var(--topbar) + 0.5rem);
+    top: calc(var(--topbar-total) + 0.5rem);
     z-index: 10;
     margin-bottom: 0.75rem;
   }

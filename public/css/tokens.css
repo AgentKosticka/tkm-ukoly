@@ -136,6 +136,10 @@
 
   --topbar: 3.75rem;
   --page-x: clamp(1rem, 3vw, 2rem);
+  /* Okraje stránky s ohledem na výřez a zaoblené rohy displeje. */
+  --page-left: max(var(--page-x), env(safe-area-inset-left));
+  --page-right: max(var(--page-x), env(safe-area-inset-right));
+  --topbar-total: calc(var(--topbar) + env(safe-area-inset-top));
 }
 
 @media (prefers-color-scheme: dark) {

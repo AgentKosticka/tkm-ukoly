@@ -1,13 +1,20 @@
 {
+  "id": "/",
   "name": "Úkolníček ITV a TKM Litoměřice",
   "short_name": "Úkolníček",
+  "description": "Úkoly Technického klubu mládeže a Institutu technického vzdělávání v Litoměřicích: co je potřeba udělat, na čem se pracuje a co je hotové.",
   "lang": "cs",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f0f4f8",
-  "theme_color": "#1d3a6e",
+  "theme_color": "#f0f4f8",
+  "categories": ["productivity"],
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

@@ -99,6 +99,25 @@ Místnosti zakládá správce: v nabídce účtu vpravo nahoře je položka **M�
 - Výběr si pamatuje prohlížeč, takže na dílenském tabletu může trvale svítit jen jeho místnost. Filtrovat může i nepřihlášený návštěvník.
 - Smazáním místnosti úkoly nezmizí, přesunou se do Obecné.
 
+## Instalace jako aplikace
+
+Úkolníček jde nainstalovat na plochu telefonu, tabletu i počítače (PWA). Otevírá se pak ve vlastním okně bez lišty prohlížeče.
+
+- **Android, Chrome a Edge na počítači:** v patičce stránky se objeví tlačítko **Nainstalovat aplikaci**. Stejnou volbu má i nabídka prohlížeče.
+- **iPhone a iPad:** v Safari tlačítko Sdílet a **Přidat na plochu**.
+
+Instalace i běh bez připojení vyžadují HTTPS, tedy nastavenou doménu v `SITE_ADDRESS`. Přes obyčejné HTTP funguje Úkolníček jen jako běžná webová stránka.
+
+Bez připojení:
+
+- aplikace se otevře a ukáže nástěnku v posledním načteném stavu, s upozorněním, z kdy ten stav je,
+- náhledy fotek, které už zařízení vidělo, se zobrazí,
+- detail úkolu, přihlášení a jakékoliv změny připojení potřebují.
+
+Co se v zařízení ukládá: soubory aplikace, naposledy zobrazené fotky (nejvýš 300) a poslední stav nástěnky tak, jak ho vidí nepřihlášený návštěvník, tedy bez jmen členů. Odpovědi serveru pro přihlášené se neukládají, takže na sdíleném tabletu po odhlášení nic osobního nezůstane.
+
+Když je zařízení online, načítá se vždy aktuální verze aplikace; po aktualizaci serveru není potřeba nic přeinstalovat.
+
 ## Zálohy
 
 Všechna data jsou ve svazku `tkm-ukoly_data`: databáze `ukoly.db`, fotky ve složce `photos` a denní zálohy databáze za posledních sedm dní ve složce `backups`.
@@ -148,6 +167,7 @@ Kódování do JPEG XL potřebuje zhruba 25–50 MB paměti na megapixel. Fotky 
 - Stav účtu se čte z databáze při každém požadavku. Zablokování nebo odebrání práv platí okamžitě.
 - Požadavky, které něco mění, musí přijít ze stejné adresy a nést vlastní hlavičku (ochrana proti CSRF).
 - Přísná Content-Security-Policy: stránka nenačítá nic z cizích serverů, písma i ikony jsou součástí aplikace.
+- Service worker ukládá jen veřejné soubory aplikace a fotky. Na adresy API nesahá.
 - Po pěti špatných heslech se přihlášení z dané adresy na daný účet na 15 minut zablokuje. Účet se nezamyká jen podle jména, aby ho nešlo odstavit hádáním.
 - Jména členů vidí jen přihlášení. Návštěvník vidí úkoly, fotky a místnosti bez autorů.
 - Aplikace běží v kontejneru bez práv roota, se souborovým systémem jen pro čtení a bez přístupu do internetu. Ven je vystavený jen Caddy.

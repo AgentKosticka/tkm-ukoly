@@ -1,6 +1,6 @@
 import { media } from '../api.js';
 import { clear, gear, h, icon } from '../dom.js';
-import { GENERAL_ROOM, STATUS, STATUSES, count, isoDate, shortDate } from '../format.js';
+import { GENERAL_ROOM, STATUS, STATUSES, count, eventDate, isoDate, shortDate } from '../format.js';
 import { isMember, loadMoreDone, refreshBoard, roomName, store, toggleRoom } from '../store.js';
 import { segmented } from '../ui/segmented.js';
 import { toastError } from '../ui/toast.js';
@@ -165,6 +165,31 @@ function roomFilter() {
   );
 }
 
+/** Upozornění, že nástěnku nejde obnovit a je vidět starší stav. */
+function staleNotice() {
+  if (!store.staleSince) return null;
+  const retry = h(
+    'button',
+    {
+      class: 'btn btn-quiet',
+      type: 'button',
+      onClick: async () => {
+        retry.disabled = true;
+        await refreshBoard();
+        retry.disabled = false;
+      },
+    },
+    'Zkusit znovu',
+  );
+  return h(
+    'div',
+    { class: 'stale', role: 'status' },
+    icon('alert'),
+    h('span', { class: 'stale-text' }, 'Bez připojení. Vidíte stav z ', h('time', { datetime: isoDate(store.staleSince) }, eventDate(store.staleSince)), '.'),
+    retry,
+  );
+}
+
 function emptySelection() {
   return h(
     'div',
@@ -230,7 +255,7 @@ export function renderBoard() {
     firstPaint = false;
     if (store.filter.size > 0) {
       // Prázdný je jen výběr, ne celá nástěnka.
-      clear(root).append(summary(), roomFilter() ?? '', emptySelection());
+      clear(root).append(staleNotice() ?? '', summary(), roomFilter() ?? '', emptySelection());
     } else {
       clear(root).append(emptyBoard());
     }
@@ -254,7 +279,7 @@ export function renderBoard() {
   const filterScroll = root.querySelector('.room-filter')?.scrollLeft ?? 0;
   const filter = roomFilter();
   clear(root);
-  for (const node of [summary(), filter, h('div', { class: 'board-tabs' }, tabs.el), board]) {
+  for (const node of [staleNotice(), summary(), filter, h('div', { class: 'board-tabs' }, tabs.el), board]) {
     if (node) root.append(node);
   }
   if (filter) filter.scrollLeft = filterScroll;

@@ -19,12 +19,49 @@ export const store = {
   me: { user: null, pendingUsers: undefined, limits: { maxUploadBytes: 20 * 1024 * 1024, maxPhotosPerTask: 40 } },
   board: null,
   boardError: null,
+  // Čas, ze kterého je zobrazená nástěnka, když ji nejde obnovit; jinak null.
+  staleSince: null,
   rooms: [],
   // Prázdný výběr znamená všechny místnosti.
   filter: loadFilter(),
 };
 
 const filterParam = () => [...store.filter].sort((a, b) => a - b).join(',');
+
+// Poslední načtená nástěnka se ukládá v prohlížeči, aby šla ukázat i bez
+// připojení. Ukládá se jen to, co vidí každý návštěvník: jména členů ne.
+const SNAPSHOT_KEY = 'ukolnicek.nastenka';
+
+function saveSnapshot(board) {
+  const columns = {};
+  for (const status of STATUSES) {
+    columns[status] = {
+      tasks: board.columns[status].tasks.map(({ author, ...task }) => task),
+      nextCursor: null,
+    };
+  }
+  try {
+    const snapshot = { savedAt: Date.now(), filterUsed: board.filterUsed, counts: board.counts, columns, rooms: board.rooms };
+    window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Plné úložiště nebo soukromý režim: offline náhled prostě nebude.
+  }
+}
+
+function loadSnapshot(filterUsed) {
+  try {
+    const snapshot = JSON.parse(window.localStorage.getItem(SNAPSHOT_KEY) ?? 'null');
+    const valid =
+      snapshot &&
+      snapshot.filterUsed === filterUsed &&
+      Number.isFinite(snapshot.savedAt) &&
+      Array.isArray(snapshot.rooms) &&
+      STATUSES.every((status) => Array.isArray(snapshot.columns?.[status]?.tasks) && Number.isInteger(snapshot.counts?.[status]));
+    return valid ? snapshot : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Patří úkol do právě vybraných místností? */
 export function matchesFilter(task) {
@@ -122,9 +159,25 @@ export async function refreshBoard() {
     }
     store.board = board;
     store.boardError = null;
+    store.staleSince = null;
+    store.loadedAt = Date.now();
+    saveSnapshot(board);
   } catch (error) {
     if (request !== boardRequest) return;
     store.boardError = error;
+    const used = filterParam();
+    if (store.board?.filterUsed === used) {
+      // Nástěnka z téhle návštěvy zůstává, jen už nemusí být aktuální.
+      store.staleSince ??= store.loadedAt ?? Date.now();
+    } else {
+      // Studený start bez připojení: poslední uložený stav, pokud nějaký je.
+      const snapshot = loadSnapshot(used);
+      store.board = snapshot
+        ? { counts: snapshot.counts, columns: snapshot.columns, rooms: snapshot.rooms, filterUsed: used }
+        : null;
+      store.staleSince = snapshot ? snapshot.savedAt : null;
+      if (snapshot) store.rooms = snapshot.rooms;
+    }
   }
   notify('board');
 }

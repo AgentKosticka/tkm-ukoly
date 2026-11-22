@@ -51,6 +51,9 @@ jobs:
           curl -fsS http://localhost/ | grep -q 'Úkolníček'
           curl -fsSI http://localhost/ | grep -qi "content-security-policy: default-src 'none'"
           curl -fsS http://localhost/api/tasks | grep -q '"counts"'
+          # Soubory pro instalaci jako aplikace.
+          curl -fsSI http://localhost/manifest.webmanifest | grep -qi 'content-type: application/manifest+json'
+          curl -fsS http://localhost/sw.js | grep -q "addEventListener('fetch'"
       - name: V obrazu běží produkční fáze s funkčním JPEG XL
         run: |
           set -eu
