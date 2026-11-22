@@ -5,9 +5,9 @@ import { generatePassword, hashPassword, passwordProblem, usernameProblem } from
  * pokud správce už je, nic nedělá.
  *
  * Heslo se bere z ADMIN_PASSWORD. Když chybí, vygeneruje se náhodné, vypíše se
- * jednou do logu a správce si ho při prvním přihlášení musí změnit.
+ * jednou na standardní výstup a správce si ho při prvním přihlášení musí změnit.
  */
-export async function ensureAdmin(db, config, log) {
+export async function ensureAdmin(db, config, log, announce = (text) => process.stdout.write(text)) {
   const admins = db.prepare("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'approved'").pluck().get();
   if (admins > 0) return null;
 
@@ -39,10 +39,12 @@ export async function ensureAdmin(db, config, log) {
   }
 
   if (generated) {
+    // Mimo strukturovaný log, aby šlo heslo ve výpisu snadno najít a přečíst.
     const line = '='.repeat(64);
-    log.warn(
-      `\n${line}\n  Vytvořen účet správce\n  Jméno: ${username}\n  Heslo: ${password}\n  Heslo si po prvním přihlášení změňte. Znovu se už nezobrazí.\n${line}`,
+    announce(
+      `\n${line}\n  Vytvořen účet správce\n  Jméno: ${username}\n  Heslo: ${password}\n  Heslo si po prvním přihlášení změňte. Znovu se už nezobrazí.\n${line}\n\n`,
     );
+    log.warn(`Vytvořen účet správce „${username}“ s vygenerovaným heslem (viz výpis výše)`);
   } else {
     log.info(`Vytvořen účet správce „${username}“ s heslem z ADMIN_PASSWORD`);
   }

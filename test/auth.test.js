@@ -214,7 +214,7 @@ describe('první správce', () => {
     const ctx = await startApp({ adminUsername: 'jiny', adminPassword: null });
     // startApp už správce založil; ověří se, že druhé volání nic nezmění.
     const { ensureAdmin } = await import('../src/bootstrap.js');
-    const again = await ensureAdmin(ctx.db, ctx.config, { info: (m) => lines.push(m), warn: (m) => lines.push(m) });
+    const again = await ensureAdmin(ctx.db, ctx.config, { info() {}, warn() {} }, (text) => lines.push(text));
     assert.equal(again, null);
     const row = ctx.db.prepare("SELECT role, status, must_change_password FROM users WHERE username = 'jiny'").get();
     assert.deepEqual(row, { role: 'admin', status: 'approved', must_change_password: 1 });
@@ -226,8 +226,10 @@ describe('první správce', () => {
     const ctx = await startApp({ adminUsername: 'docasny', adminPassword: null });
     ctx.db.prepare('DELETE FROM users').run();
     const lines = [];
-    await ensureAdmin(ctx.db, ctx.config, { info: (m) => lines.push(m), warn: (m) => lines.push(m) });
+    const logged = [];
+    await ensureAdmin(ctx.db, ctx.config, { info: (m) => logged.push(m), warn: (m) => logged.push(m) }, (text) => lines.push(text));
     const password = /Heslo: (\S+)/.exec(lines.join('\n'))[1];
+    assert.ok(!logged.join('\n').includes(password), 'heslo se nesmí dostat do strukturovaného logu');
 
     const admin = ctx.client();
     const login = await admin.login('docasny', password);

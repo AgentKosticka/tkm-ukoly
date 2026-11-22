@@ -56,7 +56,7 @@ export function openDialog({ label, wide = false, dismissable = true, onClosed, 
     onClosed?.(result);
   }
 
-  return { el, close, focusFirst: () => el.querySelector('input, textarea, button')?.focus() };
+  return { el, close };
 }
 
 /** Potvrzení nevratné akce. Vrací Promise<boolean>. */

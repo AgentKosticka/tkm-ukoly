@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -338,7 +337,5 @@ export async function createPhotoStore(config, log) {
         return { ...result, file: target, cleanup: () => fsp.rm(work, { recursive: true, force: true }) };
       });
     },
-
-    exists: (file) => fs.existsSync(file),
   };
 }

@@ -27,7 +27,7 @@ export async function startApp(overrides = {}) {
     ...overrides,
   });
   const app = await buildApp(config);
-  await ensureAdmin(app.ctx.db, config, { info() {}, warn() {} });
+  await ensureAdmin(app.ctx.db, config, { info() {}, warn() {} }, () => {});
   await app.ready();
   return {
     app,
