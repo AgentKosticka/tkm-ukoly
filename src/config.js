@@ -38,20 +38,43 @@ function origin(name) {
 }
 
 /**
- * Složka pro fotky na hostiteli, jak ji správce zapsal do .env. Do kontejneru
- * ji připojuje Compose; aplikace ji zná jen kvůli kontrole a hlášením.
+ * Kde jsou fotky. Běžně u ostatních dat; PHOTOS_DIR je umístí jinam.
  *
- * Musí to být celá cesta. Poměrnou by Compose vyložil vůči složce, ze které
- * je spuštěný, a ta se u aktualizační služby liší: po první automatické
- * aktualizaci by se fotky začaly ukládat jinam.
+ * Síťový disk se zapojuje dvěma položkami: PHOTOS_DIR je místní složka, která
+ * existuje vždy, a PHOTOS_SUBDIR cesta uvnitř ní, kam je disk připojený.
+ * Docker totiž kontejner nespustí, když složka, kterou do něj má připojit,
+ * neodpovídá. S místní složkou se aplikace spustí i při výpadku disku.
+ *
+ * PHOTOS_HOST_DIR je táž složka pod jménem, které má na hostiteli; aplikace
+ * ho zná jen kvůli kontrole a hlášením. Musí to být celá cesta: poměrnou by
+ * Compose vyložil vůči složce, ze které je spuštěný, a ta se u aktualizační
+ * služby liší, takže by se fotky po první aktualizaci začaly ukládat jinam.
  */
-function photosHostDir() {
-  const raw = process.env.PHOTOS_HOST_DIR;
-  if (!raw) return null;
-  if (!raw.startsWith('/')) {
-    throw new Error(`PHOTOS_DIR v souboru .env musí být celá cesta začínající lomítkem, ne „${raw}“`);
+function photoStorage(dataDir) {
+  const dir = process.env.PHOTOS_DIR;
+  const hostDir = process.env.PHOTOS_HOST_DIR;
+  const subdir = process.env.PHOTOS_SUBDIR;
+  if (hostDir && !hostDir.startsWith('/')) {
+    throw new Error(`PHOTOS_DIR v souboru .env musí být celá cesta začínající lomítkem, ne „${hostDir}“`);
   }
-  return raw;
+  if (!dir) {
+    if (subdir) throw new Error('PHOTOS_SUBDIR v souboru .env má smysl jen spolu s PHOTOS_DIR');
+    return { photosDir: path.join(dataDir, 'photos'), photosRoot: null, photosHostDir: null };
+  }
+  const root = path.resolve(dir);
+  if (!subdir) return { photosDir: root, photosRoot: null, photosHostDir: hostDir || null };
+
+  const parts = subdir.split('/');
+  if (subdir.startsWith('/') || parts.some((part) => part === '' || part === '.' || part === '..')) {
+    throw new Error(`PHOTOS_SUBDIR v souboru .env musí být cesta uvnitř PHOTOS_DIR, například „nas/fotky“, ne „${subdir}“`);
+  }
+  return {
+    photosDir: path.join(root, ...parts),
+    // Místní složka, uvnitř které je úložiště připojené. Podle ní se pozná,
+    // jestli připojené opravdu je.
+    photosRoot: root,
+    photosHostDir: hostDir ? path.posix.join(hostDir, subdir) : null,
+  };
 }
 
 export function loadConfig(overrides = {}) {
@@ -61,10 +84,8 @@ export function loadConfig(overrides = {}) {
     publicDir: path.join(root, 'public'),
     dataDir,
     dbFile: path.join(dataDir, 'ukoly.db'),
-    // Fotky jsou běžně u ostatních dat; PHOTOS_DIR je umístí jinam, třeba na
-    // jiný disk. Dočasné soubory zůstávají u dat.
-    photosDir: process.env.PHOTOS_DIR ? path.resolve(process.env.PHOTOS_DIR) : path.join(dataDir, 'photos'),
-    photosHostDir: photosHostDir(),
+    // Dočasné soubory zůstávají u dat, i když jsou fotky jinde.
+    ...photoStorage(dataDir),
     tmpDir: path.join(dataDir, 'tmp'),
     backupDir: path.join(dataDir, 'backups'),
 

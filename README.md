@@ -132,10 +132,40 @@ Na co si dát pozor:
 - Když aplikace do složky nesmí zapisovat (špatný vlastník), nespustí se a v logu (`docker compose logs app`) řekne proč. Po startu také upozorní, když ve složce chybí soubory k fotkám, které zná databáze.
 - Použijte podsložku disku, ne přímo místo, kam je disk připojený. Když disk při startu serveru připojený nebude, podsložka nebude existovat, Docker ji založí prázdnou pod rootem a aplikace se odmítne spustit. Fotky tak neskončí omylem na systémovém disku.
 - Ve složce jsou jen fotky. Databáze, její zálohy a dočasné soubory zůstávají ve svazku `tkm-ukoly_data`.
-- Složka může být i na síťovém disku (NAS), který je na serveru připojený, například přes `/etc/fstab`. U připojení SMB nastavte volbami `uid=1000,gid=1000`, komu soubory patří; `chown` tam nefunguje.
-- Když síťový disk přestane odpovídat, aplikace běží dál a umí se i znovu spustit. Úkoly fungují, místo fotek je šedé pole s ikonou a nahrávání hlásí, že úložiště není dostupné. Po návratu disku stačí stránku obnovit.
-- To platí, dokud disk zůstává na serveru připojený. Když server nastartuje a disk se nepřipojí vůbec, složka chybí, Docker ji založí prázdnou pod rootem a aplikace se nespustí, aby fotky neskončily na systémovém disku. Pomůže disk připojit (`mount` s cestou připojení); aplikace se pak do minuty spustí sama.
+- Pro síťový disk (NAS) použijte postup v další části. Složka zadaná přímo na síťovém disku by při jeho výpadku bránila aplikaci ve startu: Docker kontejner nespustí, když připojovaná složka neodpovídá.
 - Původní fotky ve svazku po zkopírování zůstanou. Smazat je můžete až po přepnutí, když ověříte, že se všechny zobrazují: `docker compose exec app rm -rf /data/photos`. Bez nastaveného `PHOTOS_DIR` by tento příkaz smazal fotky, které se právě používají.
+
+### Fotky na síťovém disku (NAS)
+
+Síťový disk se může odmlčet, proto se zapojuje o úroveň níž: `PHOTOS_DIR` je místní složka, která existuje vždy, a `PHOTOS_SUBDIR` říká, kam je disk uvnitř ní připojený.
+
+1. Založte místní složku a v ní místo pro připojení. Obě nechte rootovi:
+
+   ```bash
+   mkdir -p /srv/ukolnicek/nas
+   ```
+
+2. Disk připojte natrvalo řádkem v `/etc/fstab` (příklad pro sdílení SMB bez hesla; balík `cifs-utils`) a připojte ho příkazem `mount /srv/ukolnicek/nas`:
+
+   ```
+   //192.168.0.10/sdileni/ukolnicek /srv/ukolnicek/nas cifs guest,uid=1000,gid=1000,file_mode=0600,dir_mode=0700,iocharset=utf8,_netdev,nofail,x-systemd.before=docker.service,x-systemd.mount-timeout=30 0 0
+   ```
+
+   Volby `uid=1000,gid=1000` určují, komu soubory patří; `chown` na sdílení SMB nefunguje. Mezera v cestě se v `/etc/fstab` píše jako `\040`.
+
+3. V `.env` nastavte obě položky a spusťte `docker compose up -d`:
+
+   ```
+   PHOTOS_DIR=/srv/ukolnicek
+   PHOTOS_SUBDIR=nas/fotky
+   ```
+
+Jak se to chová, když disk není k dispozici:
+
+- Aplikace běží dál a jde i restartovat a aktualizovat. Úkoly fungují, místo fotek je šedé pole s ikonou a nahrávání hlásí, že úložiště není dostupné.
+- První požadavek na fotku čeká nejdéle 8 sekund. Potom aplikace na disk půl minuty nesahá a fotky odmítá hned, takže zbytek webu nezpomalí. Každých 30 sekund disk jedním požadavkem zkusí znovu.
+- Po návratu disku se fotky do půl minuty zase načítají; v prohlížeči stačí stránku obnovit. Disk připojený až po startu aplikace se projeví sám, bez restartu.
+- Dokud disk není připojený, aplikace do složky nic neuloží, ani kdyby do ní zapisovat směla. Fotky tak neskončí omylem na systémovém disku.
 
 ## Automatické aktualizace
 
@@ -267,6 +297,7 @@ Všechno se nastavuje v souboru `.env`; popis položek je v [.env.example](.env.
 | `TUNNEL_BIND` | `127.0.0.1` | Adresa hostitele, na které port v režimu za tunelem poslouchá. |
 | `TUNNEL_PROXIES` | místní a soukromé rozsahy | Adresy tunelu, jejichž hlavičkám `X-Forwarded-*` se věří. |
 | `PHOTOS_DIR` | prázdné | Složka na serveru pro fotky. Prázdné znamená svazek Dockeru u ostatních dat. |
+| `PHOTOS_SUBDIR` | prázdné | Síťový disk: cesta uvnitř `PHOTOS_DIR`, kam je připojený a kde jsou fotky. |
 | `PROXY_SUBNET` | `172.30.99.0/29` | Vnitřní síť mezi Caddy a aplikací. |
 | `PUBLIC_ORIGIN` | prázdné | Pevná veřejná adresa pro kontrolu původu požadavků. Za tunelem ji vyplňte. |
 | `JXL_MAX_MEGAPIXELS` | `24` | Největší fotka archivovaná v JPEG XL. |

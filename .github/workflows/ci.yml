@@ -249,6 +249,46 @@ jobs:
           curl -fsS -b "$jar" -D original.txt -o original.jpg "$base/api/photos/$photo/original"
           grep -qi '^content-type: image/jpeg' original.txt
           test "$(head -c 2 original.jpg | od -An -tx1 | tr -d ' ')" = ffd8
+      - name: Úložiště připojené až po startu (síťový disk) aplikace uvidí bez restartu
+        run: |
+          set -eu
+          # Místní složka existuje vždy; „disk“ se do ní připojí až za běhu.
+          sudo mkdir -p /srv/ukoly-uloziste/disk
+          sed -i 's#^PHOTOS_DIR=.*#PHOTOS_DIR=/srv/ukoly-uloziste#' .env
+          echo "PHOTOS_SUBDIR=disk/fotky" >> .env
+          docker compose up -d --wait --wait-timeout 180
+          docker compose logs app | grep -q 'úložiště není připojené'
+          docker inspect "$(docker compose ps -q app)" --format '{{range .Mounts}}{{.Destination}} {{.Propagation}}{{"\n"}}{{end}}' | grep -q '^/photos rslave'
+          jar=$(mktemp)
+          base=http://127.0.0.1:8123
+          curl -fsS -c "$jar" -X POST $base/api/auth/login \
+            -H "Origin: $base" -H 'Content-Type: application/json' -H 'X-Requested-With: ukolnicek' \
+            -d '{"username":"admin","password":"Zkusebni-Heslo-Pro-CI-2026"}' | grep -q '"role":"admin"'
+          upload() {
+            curl -sS -b "$jar" -o upload.json -w '%{http_code}' -X POST "$base/api/tasks/1/photos" \
+              -H "Origin: $base" -H 'X-Requested-With: ukolnicek' -F 'photo=@velka.jpg;type=image/jpeg'
+          }
+          # Bez připojeného disku se nahrání odmítne a na místní disk se nic nezapíše.
+          test "$(upload)" = 503
+          grep -q '"storage_unavailable"' upload.json
+          curl -fsS $base/api/tasks | grep -q '"counts"'
+          test -z "$(sudo find /srv/ukoly-uloziste -type f)"
+          # Připojení za běhu: aplikace disk po zkušebním intervalu najde sama.
+          sudo mount -t tmpfs -o uid=1000,gid=1000,mode=0700 tmpfs /srv/ukoly-uloziste/disk
+          code=000
+          for attempt in $(seq 1 20); do
+            code=$(upload)
+            if [ "$code" = 201 ]; then break; fi
+            sleep 5
+          done
+          echo "nahrání po připojení: $code (pokus $attempt)"
+          test "$code" = 201
+          photo=$(sed -E 's/.*"photo":\{"id":"([A-Za-z0-9_-]+)".*/\1/' upload.json)
+          sudo find /srv/ukoly-uloziste/disk/fotky -type f -name "$photo.orig.jxl" | grep -q .
+          curl -fsS -o /dev/null "$base/media/$photo/thumb"
+          # Po odpojení na místním disku nic nezůstane: vše šlo na připojený disk.
+          sudo umount -l /srv/ukoly-uloziste/disk
+          test -z "$(sudo find /srv/ukoly-uloziste -type f)"
       - name: Tunel v kontejneru dosáhne na Caddy přes síť outside
         run: |
           set -eu

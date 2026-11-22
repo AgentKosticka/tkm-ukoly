@@ -4,6 +4,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { HttpError } from '../http/errors.js';
 import { Semaphore } from '../util/semaphore.js';
+import { createStorageGuard, storageUnavailable } from '../util/storage-guard.js';
 import { createJxl } from './jxl.js';
 import { stripJpegMetadata } from './jpeg.js';
 import { stripPngMetadata } from './png.js';
@@ -58,16 +59,42 @@ export async function moveFile(source, target) {
 const SETUP_ERRORS = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOTDIR']);
 const PROBE_TIMEOUT_MS = 10_000;
 
-const storageUnavailable = () =>
-  new HttpError(503, 'storage_unavailable', 'Úložiště fotek teď není dostupné. Zkuste to prosím později');
+const notMounted = () => Object.assign(new Error('úložiště fotek není připojené'), { code: 'ENODEV' });
 
 /**
- * Ověří, že složka pro fotky existuje a jde do ní zapisovat.
+ * U úložiště připojeného uvnitř místní složky (PHOTOS_SUBDIR) ověří, že
+ * připojené opravdu je: složka pro fotky musí ležet na jiném souborovém
+ * systému než místní složka nad ní. Bez připojení by se fotky tiše ukládaly
+ * na systémový disk a po připojení by zmizely z očí.
+ */
+async function assertMounted(config) {
+  if (!config.photosRoot) return;
+  const rootDevice = (await fsp.stat(config.photosRoot)).dev;
+  // Složka pro fotky ještě nemusí existovat; rozhoduje nejbližší existující
+  // složka nad ní.
+  for (let dir = config.photosDir; dir.startsWith(config.photosRoot) && dir !== config.photosRoot; dir = path.dirname(dir)) {
+    let info;
+    try {
+      info = await fsp.stat(dir);
+    } catch (err) {
+      if (err.code === 'ENOENT') continue;
+      throw err;
+    }
+    if (info.dev !== rootDevice) return;
+    break;
+  }
+  throw notMounted();
+}
+
+/**
+ * Ověří, že složka pro fotky existuje a jde do ní zapisovat. Vrací, jestli
+ * je úložiště připravené.
  *
- * Když do ní aplikace zapisovat nesmí, jde o chybu nastavení a start skončí
- * s návodem, jak ji opravit. Když složka jen neodpovídá (typicky síťový disk
- * mimo provoz), aplikace se spustí i tak: úkoly fungují dál, místo fotek je
- * v rozhraní šedé pole a nahrávání hlásí chybu, dokud se úložiště nevrátí.
+ * U obyčejné složky je chyba oprávnění chybou nastavení a start skončí s
+ * návodem, jak ji opravit. Když složka jen neodpovídá, nebo jde o úložiště
+ * připojované uvnitř místní složky (síťový disk, který právě není k
+ * dispozici), aplikace se spustí i tak: úkoly fungují dál, místo fotek je v
+ * rozhraní šedé pole a nahrávání hlásí chybu, dokud se úložiště nevrátí.
  */
 async function preparePhotosDir(config, log) {
   // Na hostiteli se složka může jmenovat jinak než v kontejneru; v hlášení
@@ -75,6 +102,7 @@ async function preparePhotosDir(config, log) {
   const shown = config.photosHostDir ?? config.photosDir;
   const probe = path.join(config.photosDir, `.zapis-${crypto.randomBytes(6).toString('hex')}`);
   const attempt = (async () => {
+    await assertMounted(config);
     await fsp.mkdir(config.photosDir, { recursive: true, mode: 0o700 });
     await fsp.writeFile(probe, '', { flag: 'wx', mode: 0o600 });
     await fsp.rm(probe, { force: true });
@@ -90,13 +118,19 @@ async function preparePhotosDir(config, log) {
     await Promise.race([attempt, timeout]);
     return true;
   } catch (err) {
-    if (SETUP_ERRORS.has(err.code)) {
-      const owner = typeof process.getuid === 'function' ? `${process.getuid()}:${process.getgid()}` : null;
-      const hint = owner ? ` Složka musí patřit uživateli, pod kterým aplikace běží: chown -R ${owner} ${shown}` : '';
+    const owner = typeof process.getuid === 'function' ? `${process.getuid()}:${process.getgid()}` : null;
+    const hint = owner ? ` Složka musí patřit uživateli, pod kterým aplikace běží: chown -R ${owner} ${shown}` : '';
+    if (SETUP_ERRORS.has(err.code) && !config.photosRoot) {
       throw new Error(`Do složky pro fotky ${shown} nejde zapisovat (${err.code}).${hint}`, { cause: err });
     }
+    const reason =
+      err.code === 'ENODEV'
+        ? 'úložiště není připojené'
+        : SETUP_ERRORS.has(err.code)
+          ? `nejde do ní zapisovat, ${err.code}.${hint}`
+          : (err.code ?? err.message);
     log.error(
-      `Složka pro fotky ${shown} teď není dostupná (${err.code ?? err.message}). ` +
+      `Složka pro fotky ${shown} teď není dostupná (${reason}). ` +
         'Aplikace běží dál; fotky se nezobrazí a nepůjdou nahrávat, dokud se úložiště nevrátí',
     );
     return false;
@@ -109,6 +143,16 @@ async function preparePhotosDir(config, log) {
 
 export async function createPhotoStore(config, log) {
   const storageReady = await preparePhotosDir(config, log);
+  // Všechno čtení i zápis ve složce pro fotky jde přes pojistku, aby výpadek
+  // úložiště (síťový disk) nezdržel zbytek aplikace.
+  const storage = createStorageGuard({
+    timeoutMs: config.photosTimeoutMs ?? 8000,
+    retryMs: config.photosRetryMs ?? 30_000,
+    log,
+  });
+  if (!storageReady) storage.markDown('při startu', { quiet: true });
+  // Ukládání přenáší celé soubory, proto má delší limit než čtení.
+  const WRITE_TIMEOUT = (config.photosTimeoutMs ?? 8000) * 4;
   // Po pádu mohly zůstat rozpracované soubory.
   await fsp.rm(config.tmpDir, { recursive: true, force: true });
   await fsp.mkdir(config.tmpDir, { recursive: true, mode: 0o700 });
@@ -337,13 +381,19 @@ export async function createPhotoStore(config, log) {
       else archive = await archivePng(input, meta, work, direct);
 
       try {
-        const dir = path.dirname(fileFor(id, 'thumb'));
-        await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
-        const archiveTarget = fileFor(id, 'orig', archive.format);
-        if (archive.file) await moveFile(archive.file, archiveTarget);
-        else await fsp.writeFile(archiveTarget, archive.data, { mode: 0o600, flag: 'wx' });
-        if (view) await fsp.writeFile(fileFor(id, 'view'), view, { mode: 0o600, flag: 'wx' });
-        await fsp.writeFile(fileFor(id, 'thumb'), thumb, { mode: 0o600, flag: 'wx' });
+        await storage.run(
+          async () => {
+            await assertMounted(config);
+            const dir = path.dirname(fileFor(id, 'thumb'));
+            await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+            const archiveTarget = fileFor(id, 'orig', archive.format);
+            if (archive.file) await moveFile(archive.file, archiveTarget);
+            else await fsp.writeFile(archiveTarget, archive.data, { mode: 0o600, flag: 'wx' });
+            if (view) await fsp.writeFile(fileFor(id, 'view'), view, { mode: 0o600, flag: 'wx' });
+            await fsp.writeFile(fileFor(id, 'thumb'), thumb, { mode: 0o600, flag: 'wx' });
+          },
+          { timeout: WRITE_TIMEOUT },
+        );
       } catch (err) {
         // Fotka je zpracovaná, jen ji není kam uložit.
         log.error({ err: err.message, code: err.code }, 'Fotku se nepodařilo uložit do složky pro fotky');
@@ -372,11 +422,32 @@ export async function createPhotoStore(config, log) {
   async function removeFiles(id) {
     if (!isPhotoId(id)) return;
     const dir = path.join(config.photosDir, id.slice(0, 2));
-    const names = await fsp.readdir(dir).catch(() => []);
-    await Promise.all(
-      names.filter((name) => name.startsWith(`${id}.`)).map((name) => fsp.rm(path.join(dir, name), { force: true })),
-    );
+    try {
+      await storage.run(async () => {
+        const names = await fsp.readdir(dir).catch((err) => {
+          if (err.code === 'ENOENT') return [];
+          throw err;
+        });
+        // Po jednom: souběžné mazání by při výpadku obsadilo víc vláken najednou.
+        for (const name of names.filter((n) => n.startsWith(`${id}.`))) {
+          await fsp.rm(path.join(dir, name), { force: true });
+        }
+      });
+    } catch (err) {
+      // Záznam o fotce je pryč z databáze; soubory, které smazat nešly, jen
+      // zabírají místo.
+      log.warn({ err: err.message, id }, 'Soubory fotky se nepodařilo smazat');
+    }
   }
+
+  /** Údaje o souboru; `null`, když neexistuje. Výpadek úložiště je chyba. */
+  const statOrNull = (file) =>
+    storage.run(() =>
+      fsp.stat(file).catch((err) => {
+        if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+        throw err;
+      }),
+    );
 
   return {
     jxlAvailable: jxl.available,
@@ -394,26 +465,31 @@ export async function createPhotoStore(config, log) {
      * přesměrovanou složku bez zkopírovaných souborů.
      */
     async countMissing(ids) {
-      const present = await Promise.all(
-        ids.filter(isPhotoId).map((id) => fsp.access(fileFor(id, 'thumb')).then(() => true, () => false)),
-      );
-      return present.filter((ok) => !ok).length;
+      const present = await Promise.all(ids.filter(isPhotoId).map((id) => statOrNull(fileFor(id, 'thumb'))));
+      return present.filter((info) => !info).length;
     },
 
     /**
-     * Soubor pro zobrazení na stránce: náhled, nebo větší verze. Malé fotky
+     * Obsah pro zobrazení na stránce: náhled, nebo větší verze. Malé fotky
      * větší verzi nemají a zobrazují se rovnou z archivu.
+     *
+     * Soubor se načte celý do paměti (jsou to nejvýš jednotky megabajtů),
+     * aby i čtení šlo přes pojistku a neviselo při výpadku úložiště.
      */
     async displayFile(photo, variant) {
       if (!isPhotoId(photo.id) || (variant !== 'thumb' && variant !== 'view')) return null;
-      const stat = (file) => fsp.stat(file).then((info) => info, () => null);
-      const derived = fileFor(photo.id, variant);
-      let info = await stat(derived);
-      if (info) return { file: derived, size: info.size, contentType: 'image/webp' };
+      const read = (file) =>
+        storage.run(() =>
+          fsp.readFile(file).catch((err) => {
+            if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+            throw err;
+          }),
+        );
+      let data = await read(fileFor(photo.id, variant));
+      if (data) return { data, size: data.length, contentType: 'image/webp' };
       if (variant !== 'view' || photo.archive_format === 'jxl') return null;
-      const archived = fileFor(photo.id, 'orig', photo.archive_format);
-      info = await stat(archived);
-      return info ? { file: archived, size: info.size, contentType: CONTENT_TYPE[photo.archive_format] } : null;
+      data = await read(fileFor(photo.id, 'orig', photo.archive_format));
+      return data ? { data, size: data.length, contentType: CONTENT_TYPE[photo.archive_format] } : null;
     },
 
     /**
@@ -424,6 +500,9 @@ export async function createPhotoStore(config, log) {
       const restoresTo = photo.archive_restores_to;
       const source = fileFor(photo.id, 'orig', photo.archive_format);
       const result = { contentType: CONTENT_TYPE[restoresTo], extension: EXTENSION[restoresTo] };
+      // Nejdřív ověřit, že úložiště odpovídá a archiv existuje; rozbalování
+      // by jinak při výpadku drželo frontu zpracování fotek.
+      if (!(await statOrNull(source))) throw new HttpError(404, 'not_found', 'Soubor s fotkou na serveru chybí');
       if (photo.archive_format !== 'jxl') {
         return { ...result, file: source, cleanup: async () => {} };
       }

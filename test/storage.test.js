@@ -67,6 +67,26 @@ describe('složka pro fotky', () => {
     assert.equal(moved.backupDir, '/srv/data/backups');
   });
 
+  test('síťový disk: PHOTOS_SUBDIR je cesta uvnitř místní složky PHOTOS_DIR', () => {
+    const env = { DATA_DIR: '/srv/data', PHOTOS_DIR: '/photos', PHOTOS_HOST_DIR: '/srv/ukolnicek' };
+    const nas = withEnv({ ...env, PHOTOS_SUBDIR: 'nas/fotky' }, loadConfig);
+    assert.equal(nas.photosDir, '/photos/nas/fotky');
+    assert.equal(nas.photosRoot, '/photos');
+    assert.equal(nas.photosHostDir, '/srv/ukolnicek/nas/fotky');
+
+    const plain = withEnv({ ...env, PHOTOS_SUBDIR: '' }, loadConfig);
+    assert.equal(plain.photosDir, '/photos');
+    assert.equal(plain.photosRoot, null);
+
+    for (const value of ['/nas', '../jinam', 'nas/../..', 'nas//fotky', 'nas/', './nas']) {
+      assert.throws(() => withEnv({ ...env, PHOTOS_SUBDIR: value }, loadConfig), /PHOTOS_SUBDIR v souboru \.env musí být cesta uvnitř/, value);
+    }
+    assert.throws(
+      () => withEnv({ DATA_DIR: '/srv/data', PHOTOS_DIR: '', PHOTOS_HOST_DIR: '', PHOTOS_SUBDIR: 'nas' }, loadConfig),
+      /jen spolu s PHOTOS_DIR/,
+    );
+  });
+
   test('poměrná cesta v .env se odmítne', () => {
     for (const value of ['./fotky', '../fotky', 'fotky', '~/fotky']) {
       assert.throws(
@@ -173,6 +193,52 @@ describe('složka pro fotky', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // Připojení disku tu zastupuje symbolický odkaz na jiný souborový systém:
+  // pro aplikaci je rozhodující jen to, že složka leží na jiném zařízení.
+  test(
+    'síťový disk, který není připojený: aplikace běží, nic nezapíše vedle a po připojení se rozběhne sama',
+    { skip: otherFilesystem() ? false : 'k dispozici je jen jeden souborový systém' },
+    async () => {
+      const root = scratch();
+      const disk = scratch(otherFilesystem());
+      const mountpoint = path.join(root, 'nas');
+      // Prázdné místo pro připojení, do kterého aplikace zapisovat smí. I tak
+      // do něj nic uložit nesmí.
+      fs.mkdirSync(mountpoint);
+      const errors = [];
+      const logger = { level: 'error', stream: { write: (line) => errors.push(JSON.parse(line).msg) } };
+      const ctx = await startApp({ photosRoot: root, photosDir: path.join(mountpoint, 'fotky'), photosHostDir: '/srv/ukolnicek/nas/fotky', photosRetryMs: 100, logger });
+      try {
+        assert.equal(ctx.photos.storageReady, false);
+        assert.ok(errors.some((m) => /\/srv\/ukolnicek\/nas\/fotky teď není dostupná \(úložiště není připojené\)/.test(m)), errors.join('\n'));
+        const user = await approvedUser(ctx, 'odpojeno');
+        const taskId = (await user.post('/api/tasks', { title: 't' })).json.task.id;
+        const jpeg = await jpegWithExif();
+
+        const refused = await user.upload(taskId, jpeg);
+        assert.equal(refused.status, 503);
+        assert.equal(refused.json.error.code, 'storage_unavailable');
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        assert.equal((await user.upload(taskId, jpeg)).status, 503, 'ani po zkušebním intervalu se nezapisuje mimo disk');
+        assert.deepEqual(files(root), [], 'na místním disku nevznikl žádný soubor');
+        assert.deepEqual(fs.readdirSync(mountpoint), []);
+
+        // „Připojení disku“ za běhu aplikace.
+        fs.rmdirSync(mountpoint);
+        fs.symlinkSync(disk, mountpoint);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const stored = await user.upload(taskId, jpeg);
+        assert.equal(stored.status, 201);
+        assert.ok(files(disk).length > 0, 'fotka je na připojeném disku');
+        assert.equal((await ctx.client().get(`/media/${stored.json.photo.id}/thumb`)).status, 200);
+      } finally {
+        await ctx.stop();
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(disk, { recursive: true, force: true });
+      }
+    },
+  );
 
   test('chybějící soubory k fotkám z databáze se spočítají', async () => {
     const ctx = await startApp();

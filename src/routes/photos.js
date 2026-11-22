@@ -188,17 +188,17 @@ export async function mediaRoutes(app, { ctx }) {
     async (request, reply) => {
       const { id, variant } = request.params;
       const photo = getPhoto.get(id);
+      // Chyba (fotka chybí, úložiště neodpovídá) se nesmí uložit do
+      // mezipaměti; po nápravě se má fotka zase načíst.
+      reply.header('Cache-Control', 'no-store');
       const display = photo ? await photos.displayFile(photo, variant) : null;
-      if (!display) {
-        reply.header('Cache-Control', 'no-store');
-        throw notFound('Fotka neexistuje');
-      }
+      if (!display) throw notFound('Fotka neexistuje');
       reply
         .header('Content-Type', display.contentType)
         .header('Content-Length', display.size)
         // Soubor pod daným identifikátorem se nikdy nemění.
         .header('Cache-Control', 'public, max-age=31536000, immutable');
-      return reply.send(fs.createReadStream(display.file));
+      return reply.send(display.data);
     },
   );
 }

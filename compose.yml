@@ -31,11 +31,16 @@ services:
       # jako /photos. Bez ní zůstávají fotky ve svazku data, v /data/photos.
       PHOTOS_DIR: ${PHOTOS_DIR:+/photos}
       PHOTOS_HOST_DIR: ${PHOTOS_DIR:-}
+      # Síťový disk: cesta uvnitř PHOTOS_DIR, kam je připojený.
+      PHOTOS_SUBDIR: ${PHOTOS_SUBDIR:-}
     volumes:
       - data:/data
       # Když PHOTOS_DIR chybí, připojí se sem podruhé svazek data a aplikace
       # toto místo nepoužije. Compose totiž neumí připojení podmíněně vynechat.
-      - ${PHOTOS_DIR:-data}:/photos
+      # S PHOTOS_SUBDIR se navíc do kontejneru promítá, co se uvnitř složky na
+      # hostiteli připojí později (rslave), takže disk připojený až po startu
+      # aplikace uvidí bez restartu.
+      - ${PHOTOS_DIR:-data}:/photos:rw${PHOTOS_SUBDIR:+,rslave}
     networks:
       - proxy
     # Aplikace nemá žádný port vystavený ven; dostane se k ní jen Caddy.
