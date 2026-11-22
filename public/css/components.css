@@ -245,7 +245,7 @@
   left: 0;
   width: 0;
   z-index: -1;
-  background: var(--surface);
+  background: var(--thumb);
   border-radius: 0.4375rem;
   box-shadow:
     var(--shadow-1),
@@ -269,6 +269,13 @@
 .segmented-option[aria-checked='true'],
 .segmented-option[aria-selected='true'] {
   color: var(--text);
+}
+.segmented-option:active:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.segmented-option[aria-checked='true']:active {
+  background: none;
 }
 .segmented-option:disabled {
   cursor: default;

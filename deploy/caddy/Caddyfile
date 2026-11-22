@@ -1,0 +1,17 @@
+# Vstupní brána. Adresu určuje proměnná SITE_ADDRESS v souboru .env:
+#   SITE_ADDRESS=ukoly.example.cz   → Caddy si sám obstará a obnovuje certifikát (HTTPS)
+#   SITE_ADDRESS=:80 (výchozí)      → obyčejné HTTP, vhodné jen do místní sítě
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# Fotka smí mít 20 MB; s rezervou na obálku formuláře.
+	request_body {
+		max_size 21MB
+	}
+
+	# Caddy cizí hlavičky X-Forwarded-* zahazuje a nastavuje vlastní,
+	# takže aplikace vidí skutečnou adresu klienta a protokol.
+	reverse_proxy app:3000
+
+	header -Server
+}

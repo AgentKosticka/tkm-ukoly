@@ -92,6 +92,7 @@
   --surface: #ffffff;
   --raised: #e7ecf2;
   --well: #e9eef4;
+  --thumb: #ffffff;
   --line: rgb(26 26 46 / 0.1);
   --line-strong: rgb(26 26 46 / 0.18);
 
@@ -143,6 +144,7 @@
     --surface: #12151e;
     --raised: #1b1f2b;
     --well: #10131b;
+    --thumb: #2d3344;
     --line: rgb(238 240 245 / 0.1);
     --line-strong: rgb(238 240 245 / 0.2);
 

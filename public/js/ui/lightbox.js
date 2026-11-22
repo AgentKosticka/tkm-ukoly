@@ -1,6 +1,6 @@
 import { media } from '../api.js';
 import { h, icon } from '../dom.js';
-import { Spring, VelocityTracker, clamp, project, reducedMotion, rubberband } from '../spring.js';
+import { Spring, VelocityTracker, capturePointer, clamp, project, reducedMotion, rubberband } from '../spring.js';
 import { pushLayer } from './overlay.js';
 
 const GAP = 24;
@@ -208,7 +208,7 @@ export function openLightbox({ photos, index, thumbFor, canDownload, onDelete })
     gesture = { x: event.clientX, y: event.clientY, pan: pan.value, pull: pull.value, axis: null, id: event.pointerId };
     tracker.samples.length = 0;
     tracker.add(event.clientX, event.clientY);
-    track.setPointerCapture(event.pointerId);
+    capturePointer(track, event.pointerId);
   });
 
   track.addEventListener('pointermove', (event) => {

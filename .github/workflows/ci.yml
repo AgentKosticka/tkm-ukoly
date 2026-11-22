@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testy:
+    name: Testy v běhovém obrazu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Cíl "test" sestaví běhový obraz a pustí v něm celou sadu testů,
+      # včetně skutečných nástrojů JPEG XL z Debianu.
+      - run: docker build --target test .
+
+  aktualizace:
+    name: Aktualizační skript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends busybox dash
+      - run: SH=dash sh deploy/updater/test.sh
+      - run: SH="busybox sh" sh deploy/updater/test.sh
+
+  nasazeni:
+    name: Zkušební nasazení přes Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Připravit .env
+        run: |
+          cp .env.example .env
+          echo "ADMIN_PASSWORD=Zkusebni-Heslo-Pro-CI-2026" >> .env
+          echo "UPDATE_INTERVAL=0" >> .env
+      - name: Ověřit konfiguraci
+        run: docker compose config --quiet
+      - name: Spustit a počkat na zdravé služby
+        run: docker compose up -d --build --wait --wait-timeout 240
+      - name: Aplikace odpovídá přes Caddy
+        run: |
+          set -eu
+          curl -fsS http://localhost/api/health | grep -q '"ok":true'
+          curl -fsS http://localhost/ | grep -q 'Úkolníček'
+          curl -fsSI http://localhost/ | grep -qi "content-security-policy: default-src 'none'"
+          curl -fsS http://localhost/api/tasks | grep -q '"counts"'
+      - name: Zápis bez přihlášení je odmítnut
+        run: |
+          set -eu
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost/api/tasks \
+            -H 'Content-Type: application/json' -H 'X-Requested-With: ukolnicek' -d '{"title":"x"}')
+          test "$code" = 401
+      - name: Přihlášení správce a nahrání fotky
+        run: |
+          set -eu
+          jar=$(mktemp)
+          curl -fsS -c "$jar" -X POST http://localhost/api/auth/login \
+            -H 'Content-Type: application/json' -H 'X-Requested-With: ukolnicek' \
+            -d '{"username":"admin","password":"Zkusebni-Heslo-Pro-CI-2026"}' | grep -q '"role":"admin"'
+          id=$(curl -fsS -b "$jar" -X POST http://localhost/api/tasks \
+            -H 'Content-Type: application/json' -H 'X-Requested-With: ukolnicek' \
+            -d '{"title":"Zkouška z CI"}' | sed -E 's/.*"task":\{"id":([0-9]+).*/\1/')
+          curl -fsS -b "$jar" -X POST "http://localhost/api/tasks/$id/photos" \
+            -H 'X-Requested-With: ukolnicek' -F 'photo=@public/icon-512.png;type=image/png' | grep -q '"photo"'
+          # Originál se v kontejneru archivuje v JPEG XL.
+          docker compose exec -T app sh -c 'ls /data/photos/*/ | grep -q "orig.jxl"'
+      - name: Aplikace běží bez práv roota a není dostupná mimo Caddy
+        run: |
+          set -eu
+          test "$(docker compose exec -T app id -u)" != 0
+          test -z "$(docker compose port app 3000 2>/dev/null || true)"
+      - name: Logy při selhání
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+      - name: Úklid
+        if: always()
+        run: docker compose down -v

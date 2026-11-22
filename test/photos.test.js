@@ -122,6 +122,43 @@ describe('fotky', () => {
     assert.ok(!original.raw.includes(SECRET_MARKER));
   });
 
+  test('archiv není nikdy větší než nahraný soubor, ani u obrázku s paletou', async () => {
+    // Pár barev v paletě: PNG je tu velmi úsporné a nové zakódování mu nemusí stačit.
+    const width = 400;
+    const height = 300;
+    const raw = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < width * height; i += 1) {
+      const band = Math.floor((i % width) / 50) % 4;
+      raw.set([[192, 57, 43], [29, 58, 110], [240, 244, 248], [26, 26, 46]][band], i * 3);
+    }
+    const input = await sharp(raw, { raw: { width, height, channels: 3 } })
+      .withExif({ IFD0: { Make: SECRET_MARKER } })
+      .png({ palette: true, colours: 4, compressionLevel: 9 })
+      .toBuffer();
+    assert.ok(input.includes(SECRET_MARKER));
+    const res = await user.upload(taskId, input, { type: 'image/png' });
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+    const row = ctx.db.prepare('SELECT * FROM photos WHERE id = ?').get(res.json.photo.id);
+    assert.ok(row.archive_bytes <= input.length, `archiv ${row.archive_bytes} B, vstup ${input.length} B`);
+    const original = await user.get(`/api/photos/${row.id}/original`);
+    assert.ok(!original.raw.includes(SECRET_MARKER));
+    const [a, b] = await Promise.all([sharp(input).raw().toBuffer(), sharp(original.raw).raw().toBuffer()]);
+    assert.ok(a.equals(b));
+  });
+
+  test('animované PNG se odmítne', async () => {
+    const png = await pngWithAlpha({ width: 16, height: 16 });
+    // Vloží blok acTL (hlavička animace) hned za IHDR.
+    const chunk = Buffer.alloc(8 + 8 + 4);
+    chunk.writeUInt32BE(8, 0);
+    chunk.write('acTL', 4, 'latin1');
+    chunk.writeUInt32BE(2, 8);
+    const ihdrEnd = 8 + 12 + png.readUInt32BE(8);
+    const animated = Buffer.concat([png.subarray(0, ihdrEnd), chunk, png.subarray(ihdrEnd)]);
+    const res = await user.upload(taskId, animated, { type: 'image/png' });
+    assert.equal(res.status, 415);
+  });
+
   test('ztrátový WebP zůstane, jak je, jen bez metadat', async () => {
     const input = await lossyWebp();
     const res = await user.upload(taskId, input, { filename: 'obrazek.webp', type: 'image/webp' });

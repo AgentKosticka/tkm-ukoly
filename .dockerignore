@@ -1,0 +1,15 @@
+# Do obrazu jde jen to, co aplikace potřebuje k běhu a testům.
+.git
+.github
+.env
+.env.*
+node_modules
+data
+deploy
+docs
+*.md
+*.log
+compose.yml
+Dockerfile
+.dockerignore
+.gitignore

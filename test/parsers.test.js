@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import sharp from 'sharp';
 import { JpegFormatError, stripJpegMetadata } from '../src/media/jpeg.js';
+import { PngFormatError, stripPngMetadata } from '../src/media/png.js';
 import { WebpFormatError, stripWebpMetadata } from '../src/media/webp.js';
 import { sniffImageType } from '../src/media/store.js';
 import { AttemptLimiter } from '../src/util/limiter.js';
 import { BusyError, Semaphore } from '../src/util/semaphore.js';
 import { passwordProblem, usernameProblem, hashPassword, verifyPassword } from '../src/auth/passwords.js';
-import { SECRET_MARKER, jpegWithExif, lossyWebp } from './helpers.js';
+import { SECRET_MARKER, jpegWithExif, lossyWebp, pngWithAlpha } from './helpers.js';
 
 // Jednoduchý deterministický generátor, ať jsou testy opakovatelné.
 function prng(seed) {
@@ -122,6 +123,43 @@ describe('očištění WebP', () => {
         assert.ok(out.data.length <= mutated.length + 1);
       } catch (err) {
         assert.ok(err instanceof WebpFormatError, `nečekaná chyba: ${err.stack}`);
+      }
+    }
+  });
+});
+
+describe('očištění PNG', () => {
+  test('odstraní EXIF a text, zachová pixely, průhlednost i profil', async () => {
+    const input = await pngWithAlpha();
+    assert.ok(input.includes(SECRET_MARKER));
+    const { data, animated } = stripPngMetadata(Buffer.concat([input, Buffer.from('ZA-KONCEM')]));
+    assert.equal(animated, false);
+    assert.ok(!data.includes(SECRET_MARKER));
+    assert.ok(!data.includes('ZA-KONCEM'));
+    const [a, b] = await Promise.all([
+      sharp(input).raw().toBuffer({ resolveWithObject: true }),
+      sharp(data).raw().toBuffer({ resolveWithObject: true }),
+    ]);
+    assert.equal(b.info.channels, 4);
+    assert.ok(a.data.equals(b.data));
+    const meta = await sharp(data).metadata();
+    assert.equal(meta.exif, undefined);
+    assert.ok(meta.icc);
+    assert.ok(stripPngMetadata(data).data.equals(data), 'druhé očištění už nic nezmění');
+  });
+
+  test('na poškozeném vstupu skončí řízenou chybou', async () => {
+    const input = await pngWithAlpha({ width: 24, height: 24 });
+    const next = prng(99);
+    for (let i = 0; i < 4000; i += 1) {
+      let mutated = Buffer.from(input);
+      if (i % 3 === 0) mutated = mutated.subarray(0, next() % mutated.length);
+      else if (i % 3 === 1) mutated.writeUInt32BE(next(), 8 + (next() % 4) * 4);
+      else for (let k = 0; k < 4; k += 1) mutated[next() % mutated.length] = next() & 0xff;
+      try {
+        assert.ok(stripPngMetadata(mutated).data.length <= mutated.length);
+      } catch (err) {
+        assert.ok(err instanceof PngFormatError, `nečekaná chyba: ${err.stack}`);
       }
     }
   });

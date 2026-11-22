@@ -7,6 +7,7 @@ import { HttpError } from '../http/errors.js';
 import { Semaphore } from '../util/semaphore.js';
 import { createJxl } from './jxl.js';
 import { stripJpegMetadata } from './jpeg.js';
+import { stripPngMetadata } from './png.js';
 import { stripWebpMetadata } from './webp.js';
 
 sharp.cache(false);
@@ -119,7 +120,16 @@ export async function createPhotoStore(config, log) {
     // Referenční podoba: otočená podle EXIF, bez metadat, se zachovaným barevným profilem.
     const reference = await open(input).rotate().keepIccProfile().png({ compressionLevel: 6 }).toBuffer();
     const candidates = [];
-    if (keepAsIs) candidates.push({ format: keepAsIs.format, restoresTo: keepAsIs.format, data: keepAsIs.data });
+    if (keepAsIs) {
+      try {
+        // I očištěný originál musí dát přesně stejné pixely jako vstup.
+        if (await sameImage(reference, keepAsIs.data, depth)) {
+          candidates.push({ format: keepAsIs.format, restoresTo: keepAsIs.format, data: keepAsIs.data });
+        }
+      } catch (err) {
+        log.warn({ err: err.message }, 'Očištěný originál nejde přečíst');
+      }
+    }
 
     if (jxl.available && meta.width * meta.height <= config.jxlMaxPixels / 2) {
       try {
@@ -160,6 +170,20 @@ export async function createPhotoStore(config, log) {
     }
     candidates.sort((x, y) => x.bytes - y.bytes);
     return candidates[0];
+  }
+
+  async function archivePng(input, meta, work) {
+    let stripped;
+    try {
+      stripped = stripPngMetadata(input);
+    } catch {
+      throw unreadable();
+    }
+    if (stripped.animated) throw unsupported();
+    // Původní soubor bez metadat je záloha pro případ, že by nové zakódování
+    // vyšlo větší (typicky u obrázků s paletou).
+    const upright = (meta.orientation ?? 1) === 1;
+    return archivePixels(input, meta, work, upright ? { format: 'png', data: stripped.data } : null);
   }
 
   async function archiveWebp(input, meta, work) {
@@ -235,7 +259,7 @@ export async function createPhotoStore(config, log) {
       let archive;
       if (type === 'jpeg') archive = await archiveJpeg(input, meta, work);
       else if (type === 'webp') archive = await archiveWebp(input, meta, work);
-      else archive = await archivePixels(input, meta, work, null);
+      else archive = await archivePng(input, meta, work);
 
       const dir = path.dirname(fileFor(id, 'thumb'));
       await fsp.mkdir(dir, { recursive: true, mode: 0o700 });

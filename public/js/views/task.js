@@ -339,7 +339,13 @@ function photosSection(view) {
   );
   if (task.canEdit) {
     section.append(
-      h('p', { class: 'hint photo-hint' }, `JPEG, PNG nebo WebP do ${megabytes(store.me.limits.maxUploadBytes)}. Jdou sem i přetáhnout nebo vložit ze schránky`),
+      h(
+        'p',
+        { class: 'hint photo-hint' },
+        `JPEG, PNG nebo WebP do ${megabytes(store.me.limits.maxUploadBytes)}`,
+        // Přetahování a schránka dávají smysl jen s myší a klávesnicí.
+        window.matchMedia('(hover: hover)').matches && '. Jdou sem i přetáhnout nebo vložit ze schránky',
+      ),
     );
   }
   renderPhotos(view);

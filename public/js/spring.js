@@ -146,3 +146,12 @@ export class VelocityTracker {
 }
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+/** Přivlastní si ukazatel, aby tažení pokračovalo i mimo prvek. */
+export function capturePointer(element, pointerId) {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // Ukazatel už neexistuje (např. zrušené gesto); tažení se obejde i bez něj.
+  }
+}

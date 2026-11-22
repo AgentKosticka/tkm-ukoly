@@ -309,7 +309,13 @@ html.dragging-card * {
   }
 }
 
-@media (max-width: 23rem) {
+@media (max-width: 26rem) {
+  .board-tabs .segmented-option {
+    gap: 0.25rem;
+    padding: 0 0.25rem;
+  }
+}
+@media (max-width: 21.5rem) {
   .board-tabs .gear {
     display: none;
   }

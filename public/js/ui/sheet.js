@@ -1,5 +1,5 @@
 import { h } from '../dom.js';
-import { Spring, VelocityTracker, clamp, project, reducedMotion, rubberband } from '../spring.js';
+import { Spring, VelocityTracker, capturePointer, clamp, project, reducedMotion, rubberband } from '../spring.js';
 import { pushLayer } from './overlay.js';
 
 const wide = window.matchMedia('(min-width: 48rem)');
@@ -112,7 +112,7 @@ export function openSheet({ label, onClosed }) {
     startOffset = position.value;
     tracker.samples.length = 0;
     tracker.add(0, event.clientY);
-    event.currentTarget.setPointerCapture(event.pointerId);
+    capturePointer(event.currentTarget, event.pointerId);
   }
 
   function onPointerMove(event) {
