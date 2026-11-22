@@ -13,7 +13,7 @@ Rozhraní je česky a drží se vizuálu [technickyklub.cz](https://www.technick
 Potřebujete stroj s Dockerem (včetně Docker Compose) a gitem.
 
 ```bash
-git clone https://github.com/VAS-UCET/tkm-ukoly.git
+git clone https://github.com/AgentKosticka/tkm-ukoly.git
 cd tkm-ukoly
 cp .env.example .env
 docker compose up -d --build
