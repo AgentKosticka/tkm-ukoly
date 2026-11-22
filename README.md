@@ -129,9 +129,12 @@ Postup:
 Na co si dát pozor:
 
 - Cesta musí být celá, od lomítka. S poměrnou cestou se aplikace nespustí.
-- Když do složky nejde zapisovat, aplikace se nespustí a v logu (`docker compose logs app`) řekne proč. Stejně tak po startu upozorní, když ve složce chybí soubory k fotkám, které zná databáze.
+- Když aplikace do složky nesmí zapisovat (špatný vlastník), nespustí se a v logu (`docker compose logs app`) řekne proč. Po startu také upozorní, když ve složce chybí soubory k fotkám, které zná databáze.
 - Použijte podsložku disku, ne přímo místo, kam je disk připojený. Když disk při startu serveru připojený nebude, podsložka nebude existovat, Docker ji založí prázdnou pod rootem a aplikace se odmítne spustit. Fotky tak neskončí omylem na systémovém disku.
 - Ve složce jsou jen fotky. Databáze, její zálohy a dočasné soubory zůstávají ve svazku `tkm-ukoly_data`.
+- Složka může být i na síťovém disku (NAS), který je na serveru připojený, například přes `/etc/fstab`. U připojení SMB nastavte volbami `uid=1000,gid=1000`, komu soubory patří; `chown` tam nefunguje.
+- Když síťový disk přestane odpovídat, aplikace běží dál a umí se i znovu spustit. Úkoly fungují, místo fotek je šedé pole s ikonou a nahrávání hlásí, že úložiště není dostupné. Po návratu disku stačí stránku obnovit.
+- To platí, dokud disk zůstává na serveru připojený. Když server nastartuje a disk se nepřipojí vůbec, složka chybí, Docker ji založí prázdnou pod rootem a aplikace se nespustí, aby fotky neskončily na systémovém disku. Pomůže disk připojit (`mount` s cestou připojení); aplikace se pak do minuty spustí sama.
 - Původní fotky ve svazku po zkopírování zůstanou. Smazat je můžete až po přepnutí, když ověříte, že se všechny zobrazují: `docker compose exec app rm -rf /data/photos`. Bez nastaveného `PHOTOS_DIR` by tento příkaz smazal fotky, které se právě používají.
 
 ## Automatické aktualizace

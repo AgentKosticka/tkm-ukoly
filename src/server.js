@@ -15,8 +15,9 @@ if (config.photosHostDir) {
   app.log.info(`Fotky se ukládají do složky ${config.photosHostDir}`);
 }
 // Fotky, které databáze zná, ale ve složce nejsou: nejspíš změněná složka
-// pro fotky bez zkopírování dosavadních souborů.
-{
+// pro fotky bez zkopírování dosavadních souborů. Když úložiště při startu
+// neodpovídá, kontrola nemá smysl a jen by start zdržela.
+if (photos.storageReady) {
   const recent = db.prepare('SELECT id FROM photos ORDER BY created_at DESC LIMIT 200').pluck().all();
   const missing = await photos.countMissing(recent);
   if (missing > 0) {

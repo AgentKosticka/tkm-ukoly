@@ -125,6 +125,55 @@ describe('složka pro fotky', () => {
     }
   });
 
+  test('nedostupné úložiště start nezastaví; úkoly fungují a nahrání fotky ohlásí výpadek', async () => {
+    // Příliš dlouhé jméno složky dá chybu, která není chybou oprávnění,
+    // stejně jako síťový disk mimo provoz.
+    const photosDir = path.join(scratch(), 'x'.repeat(300));
+    const ctx = await startApp({ photosDir });
+    try {
+      assert.equal(ctx.photos.storageReady, false);
+      const user = await approvedUser(ctx, 'vypadek');
+      const created = await user.post('/api/tasks', { title: 'bez fotek to jde dál' });
+      assert.equal(created.status, 201);
+      const taskId = created.json.task.id;
+      assert.equal((await ctx.client().get('/api/tasks')).status, 200);
+
+      const upload = await user.upload(taskId, await jpegWithExif());
+      assert.equal(upload.status, 503);
+      assert.equal(upload.json.error.code, 'storage_unavailable');
+      assert.equal(ctx.db.prepare('SELECT COUNT(*) FROM photos').pluck().get(), 0, 'do databáze se nic nezapsalo');
+      assert.deepEqual(files(ctx.config.tmpDir), [], 'po neúspěchu nezůstal dočasný soubor');
+      // Fotka, kterou databáze zná, ale úložiště ji nevydá, je pro prohlížeč 404.
+      assert.equal((await ctx.client().get('/media/AAAAAAAAAAAAAAAAAAAAAA/thumb')).status, 404);
+    } finally {
+      await ctx.stop();
+      fs.rmSync(path.dirname(photosDir), { recursive: true, force: true });
+    }
+  });
+
+  test('úložiště, které neodpovídá, start jen zdrží o časový limit', async () => {
+    const log = [];
+    const { createPhotoStore } = await import('../src/media/store.js');
+    const dir = scratch();
+    const photosDir = path.join(dir, 'fotky');
+    fs.mkdirSync(photosDir);
+    const started = Date.now();
+    const config = { ...loadConfig(), photosDir, tmpDir: path.join(dir, 'tmp'), photosProbeMs: 50, jxlEnabled: false };
+    // Zápis, který nikdy neskončí, se chová jako disk, který neodpovídá.
+    const original = fs.promises.writeFile;
+    fs.promises.writeFile = () => new Promise(() => {});
+    try {
+      const store = await createPhotoStore(config, { info() {}, warn() {}, error: (message) => log.push(message) });
+      assert.equal(store.storageReady, false);
+      assert.ok(Date.now() - started < 5000);
+      assert.equal(log.length, 1);
+      assert.match(log[0], /teď není dostupná \(ETIMEDOUT\)/);
+    } finally {
+      fs.promises.writeFile = original;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('chybějící soubory k fotkám z databáze se spočítají', async () => {
     const ctx = await startApp();
     try {
