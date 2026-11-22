@@ -6,6 +6,7 @@ import { toast } from './ui/toast.js';
 import { mountAdmin, unmountAdmin } from './views/admin.js';
 import { openChangePassword, syncAuthDialog } from './views/auth.js';
 import { mountBoard, renderBoard, unmountBoard } from './views/board.js';
+import { mountRooms, unmountRooms } from './views/rooms.js';
 import { renderFooter, renderShell } from './views/shell.js';
 import { reloadTaskSheet, syncTaskSheet } from './views/task.js';
 
@@ -14,25 +15,31 @@ const REFRESH_MS = 60_000;
 
 let ready = false;
 
+const ADMIN_PAGES = {
+  users: { mount: mountAdmin, title: 'Uživatelé · Úkolníček' },
+  rooms: { mount: mountRooms, title: 'Místnosti · Úkolníček' },
+};
+
 function show(current) {
-  if (current.name === 'users') {
+  unmountAdmin();
+  unmountRooms();
+  const adminPage = ADMIN_PAGES[current.name];
+  if (adminPage) {
     unmountBoard();
     // Správa se vykreslí, až když je jasné, kdo je přihlášen.
-    if (ready) mountAdmin(main);
+    if (ready) adminPage.mount(main);
     else main.replaceChildren();
   } else {
-    unmountAdmin();
     mountBoard(main);
   }
   syncTaskSheet(current);
   syncAuthDialog(current);
-  document.title =
-    current.name === 'users' ? 'Uživatelé · Úkolníček' : current.name === 'task' ? `Úkol č. ${current.id} · Úkolníček` : 'Úkolníček · ITV a TKM Litoměřice';
+  document.title = adminPage?.title ?? (current.name === 'task' ? `Úkol č. ${current.id} · Úkolníček` : 'Úkolníček · ITV a TKM Litoměřice');
 }
 
 let knownUser = null;
 subscribe((what) => {
-  if (what === 'board') renderBoard();
+  if (what === 'board' || what === 'filter') renderBoard();
   if (what === 'me') {
     renderShell();
     const userId = store.me.user?.id ?? null;
@@ -41,7 +48,7 @@ subscribe((what) => {
       // Jiný uživatel vidí jiná jména a má jiná oprávnění.
       renderBoard();
       reloadTaskSheet();
-      if (route().name === 'users') show(route());
+      if (ADMIN_PAGES[route().name]) show(route());
     }
   }
 });

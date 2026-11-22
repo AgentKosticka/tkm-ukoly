@@ -55,8 +55,10 @@ export const api = {
   changePassword: (currentPassword, newPassword) =>
     request('POST', '/api/auth/password', { currentPassword, newPassword }),
 
-  board: () => request('GET', '/api/tasks'),
-  moreDone: (cursor) => request('GET', `/api/tasks?status=done&cursor=${encodeURIComponent(cursor)}`),
+  // `rooms` je výběr místností jako „0,3,5“ (0 = Obecné); prázdný znamená vše.
+  board: (rooms) => request('GET', `/api/tasks${rooms ? `?rooms=${rooms}` : ''}`),
+  moreDone: (cursor, rooms) =>
+    request('GET', `/api/tasks?status=done&cursor=${encodeURIComponent(cursor)}${rooms ? `&rooms=${rooms}` : ''}`),
   task: (id) => request('GET', `/api/tasks/${id}`),
   createTask: (data) => request('POST', '/api/tasks', data),
   updateTask: (id, data) => request('PATCH', `/api/tasks/${id}`, data),
@@ -69,6 +71,11 @@ export const api = {
   updateUser: (id, data) => request('PATCH', `/api/admin/users/${id}`, data),
   resetPassword: (id) => request('POST', `/api/admin/users/${id}/reset-password`, {}),
   deleteUser: (id) => request('DELETE', `/api/admin/users/${id}`),
+
+  adminRooms: () => request('GET', '/api/admin/rooms'),
+  createRoom: (name) => request('POST', '/api/admin/rooms', { name }),
+  renameRoom: (id, name) => request('PATCH', `/api/admin/rooms/${id}`, { name }),
+  deleteRoom: (id) => request('DELETE', `/api/admin/rooms/${id}`),
 
   /**
    * Nahraje jednu fotku. Používá XMLHttpRequest, protože fetch neumí hlásit

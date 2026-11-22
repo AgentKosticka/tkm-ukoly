@@ -52,6 +52,7 @@ export function renderShell() {
         onClick: () =>
           openMenu(account, [
             { heading: `Přihlášen jako ${user.username}` },
+            isAdmin() && { label: 'Místnosti', icon: 'door', onSelect: () => navigate('/mistnosti') },
             { label: 'Změnit heslo', icon: 'key', onSelect: () => openChangePassword() },
             { separator: true },
             { label: 'Odhlásit se', icon: 'logOut', onSelect: logout },

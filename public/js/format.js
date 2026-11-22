@@ -48,3 +48,6 @@ export const isoDate = (timestamp) => new Date(timestamp).toISOString();
 export function megabytes(bytes) {
   return `${(bytes / (1024 * 1024)).toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} MB`;
 }
+
+/** Úkoly bez místnosti. V adrese filtru má číslo 0. */
+export const GENERAL_ROOM = 'Obecné';

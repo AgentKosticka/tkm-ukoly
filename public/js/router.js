@@ -1,5 +1,5 @@
 // Adresy aplikace: / (nástěnka), /ukol/12 (detail), /prihlaseni,
-// /registrace a /uzivatele (správa).
+// /registrace, /uzivatele a /mistnosti (správa).
 
 const listeners = new Set();
 
@@ -9,6 +9,7 @@ export function parse(pathname = window.location.pathname) {
   if (pathname === '/prihlaseni') return { name: 'login' };
   if (pathname === '/registrace') return { name: 'register' };
   if (pathname === '/uzivatele') return { name: 'users' };
+  if (pathname === '/mistnosti') return { name: 'rooms' };
   return { name: 'board' };
 }
 

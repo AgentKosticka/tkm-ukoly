@@ -25,6 +25,23 @@
   margin-left: 0.25rem;
   font-weight: 400;
 }
+.task-room {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.task-room-label {
+  flex: none;
+  width: 4.5rem;
+  font-size: 0.875rem;
+  color: var(--text-2);
+}
+.task-room .select {
+  flex: 1;
+  min-width: 0;
+  max-width: 20rem;
+}
 .task-description {
   margin-top: 1.5rem;
   line-height: 1.6;

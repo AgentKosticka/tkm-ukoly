@@ -1,7 +1,7 @@
 import { media } from '../api.js';
 import { clear, gear, h, icon } from '../dom.js';
-import { STATUS, STATUSES, count, isoDate, shortDate } from '../format.js';
-import { isMember, loadMoreDone, refreshBoard, store } from '../store.js';
+import { GENERAL_ROOM, STATUS, STATUSES, count, isoDate, shortDate } from '../format.js';
+import { isMember, loadMoreDone, refreshBoard, roomName, store, toggleRoom } from '../store.js';
 import { segmented } from '../ui/segmented.js';
 import { toastError } from '../ui/toast.js';
 import { cardDragActive, enableCardDrag } from './drag.js';
@@ -26,6 +26,9 @@ export function unmountBoard() {
 
 function card(task, index) {
   const meta = h('div', { class: 'card-meta mono' });
+  // Místnost se u karty uvádí, jen když to z výběru není zřejmé.
+  const room = store.filter.size === 1 ? null : roomName(task.roomId);
+  if (room) meta.append(h('span', { class: 'card-room' }, room));
   meta.append(h('time', { datetime: isoDate(task.statusChangedAt) }, shortDate(task.statusChangedAt)));
   if (task.author) meta.append(h('span', { class: 'card-author' }, task.author));
   if (task.photoCount > 0) {
@@ -136,6 +139,41 @@ function summary() {
   );
 }
 
+/**
+ * Výběr místností: „Vše“, nebo libovolná kombinace místností a „Obecné“
+ * (úkoly bez místnosti). Dokud správce žádnou místnost nezaložil, není co vybírat.
+ */
+function roomFilter() {
+  if (store.rooms.length === 0) return null;
+  const chip = (label, id, pressed) =>
+    h(
+      'button',
+      {
+        class: 'chip',
+        type: 'button',
+        'aria-pressed': String(pressed),
+        onClick: () => toggleRoom(id).catch(toastError),
+      },
+      label,
+    );
+  return h(
+    'div',
+    { class: 'room-filter', role: 'group', 'aria-label': 'Místnosti' },
+    chip('Vše', null, store.filter.size === 0),
+    store.rooms.map((room) => chip(room.name, room.id, store.filter.has(room.id))),
+    chip(GENERAL_ROOM, 0, store.filter.has(0)),
+  );
+}
+
+function emptySelection() {
+  return h(
+    'div',
+    { class: 'board-empty board-empty-filtered' },
+    h('p', { class: 'board-empty-text' }, 'Ve vybraných místnostech teď žádné úkoly nejsou.'),
+    h('button', { class: 'btn btn-secondary', type: 'button', onClick: () => toggleRoom(null).catch(toastError) }, 'Zobrazit všechny místnosti'),
+  );
+}
+
 function emptyBoard() {
   const member = isMember();
   return h(
@@ -188,9 +226,14 @@ export function renderBoard() {
 
   const { todo, doing, done } = store.board.counts;
   if (todo + doing + done === 0) {
-    clear(root).append(emptyBoard());
     tabs = null;
     firstPaint = false;
+    if (store.filter.size > 0) {
+      // Prázdný je jen výběr, ne celá nástěnka.
+      clear(root).append(summary(), roomFilter() ?? '', emptySelection());
+    } else {
+      clear(root).append(emptyBoard());
+    }
     return;
   }
 
@@ -207,7 +250,14 @@ export function renderBoard() {
     },
   });
   const board = h('div', { class: 'board', dataset: { active: activeTab } }, STATUSES.map(column));
-  clear(root).append(summary(), h('div', { class: 'board-tabs' }, tabs.el), board);
+  // Posun řady s místnostmi (na mobilu se posouvá do stran) se zachová.
+  const filterScroll = root.querySelector('.room-filter')?.scrollLeft ?? 0;
+  const filter = roomFilter();
+  clear(root);
+  for (const node of [summary(), filter, h('div', { class: 'board-tabs' }, tabs.el), board]) {
+    if (node) root.append(node);
+  }
+  if (filter) filter.scrollLeft = filterScroll;
   window.scrollTo(0, scroll);
 
   if (isMember()) {

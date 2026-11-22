@@ -4,7 +4,9 @@ Webová nástěnka úkolů pro Technický klub mládeže a Institut technického
 
 - **Kdokoliv** si může úkoly a fotky prohlížet.
 - **Schválení členové** úkoly zakládají, upravují, mění jejich stav a přidávají fotky.
-- **Správce** schvaluje nové registrace a spravuje účty.
+- **Správce** schvaluje nové registrace, spravuje účty a zakládá místnosti.
+
+Úkoly jde rozdělit podle místností (Robotika, Dílna…). Na nástěnce si pak každý nechá zobrazit všechno, nebo jen vybrané místnosti.
 
 Rozhraní je česky a drží se vizuálu [technickyklub.cz](https://www.technickyklub.cz/): barvy, písma i obě loga.
 
@@ -87,6 +89,16 @@ git pull && docker compose up -d --build
 
 Změny v samotné službě `updater` (soubor `deploy/updater/Dockerfile` nebo `loop.sh`) se neprojeví samy. Po nich jednou spusťte `docker compose up -d --build updater`. Postup aktualizace v `update.sh` se čte při každé kontrole znovu, ten se aktualizuje sám.
 
+## Místnosti
+
+Místnosti zakládá správce: v nabídce účtu vpravo nahoře je položka **Místnosti**. Tam je jde přidávat, přejmenovat a mazat.
+
+- Úkol patří nejvýš do jedné místnosti. Vybírá se při založení a dá se kdykoliv změnit v detailu; přesun se zapíše do historie úkolu.
+- Úkol bez místnosti je v **Obecné**. Tam jsou i všechny úkoly založené dřív, než místnosti vznikly.
+- Nad nástěnkou je řada s místnostmi. „Vše“ ukáže všechno, jinak jde zaškrtnout libovolnou kombinaci místností včetně Obecné. Počty a pruh s podílem hotových úkolů se řídí výběrem.
+- Výběr si pamatuje prohlížeč, takže na dílenském tabletu může trvale svítit jen jeho místnost. Filtrovat může i nepřihlášený návštěvník.
+- Smazáním místnosti úkoly nezmizí, přesunou se do Obecné.
+
 ## Zálohy
 
 Všechna data jsou ve svazku `tkm-ukoly_data`: databáze `ukoly.db`, fotky ve složce `photos` a denní zálohy databáze za posledních sedm dní ve složce `backups`.
@@ -137,7 +149,7 @@ Kódování do JPEG XL potřebuje zhruba 25–50 MB paměti na megapixel. Fotky 
 - Požadavky, které něco mění, musí přijít ze stejné adresy a nést vlastní hlavičku (ochrana proti CSRF).
 - Přísná Content-Security-Policy: stránka nenačítá nic z cizích serverů, písma i ikony jsou součástí aplikace.
 - Po pěti špatných heslech se přihlášení z dané adresy na daný účet na 15 minut zablokuje. Účet se nezamyká jen podle jména, aby ho nešlo odstavit hádáním.
-- Jména členů vidí jen přihlášení. Návštěvník vidí úkoly a fotky bez autorů.
+- Jména členů vidí jen přihlášení. Návštěvník vidí úkoly, fotky a místnosti bez autorů.
 - Aplikace běží v kontejneru bez práv roota, se souborovým systémem jen pro čtení a bez přístupu do internetu. Ven je vystavený jen Caddy.
 
 Bez e-mailu nejde heslo obnovit samoobslužně. Zapomenuté heslo řeší správce: v seznamu uživatelů vytvoří dočasné, které si člen po přihlášení změní.

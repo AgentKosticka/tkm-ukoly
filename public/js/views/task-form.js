@@ -1,9 +1,10 @@
 import { api } from '../api.js';
 import { h } from '../dom.js';
 import { navigate } from '../router.js';
-import { upsertTask } from '../store.js';
+import { store, upsertTask } from '../store.js';
 import { openDialog } from '../ui/dialog.js';
 import { field, formError, submitWith } from './auth.js';
+import { roomSelect, selectedRoom } from './room-select.js';
 
 export const TITLE_MAX = 120;
 export const DESCRIPTION_MAX = 5000;
@@ -28,6 +29,11 @@ export function openNewTask() {
     placeholder: 'Podrobnosti, postup, kde co najít',
     hint: 'Nepovinné. Fotky přidáte hned po založení',
   });
+  // Je-li na nástěnce vybraná právě jedna místnost, nový úkol do ní nejspíš patří.
+  const only = store.filter.size === 1 ? [...store.filter][0] : 0;
+  const room = store.rooms.length > 0 ? roomSelect({ value: only === 0 ? null : only }) : null;
+  const roomField = room && h('div', { class: 'field' }, h('label', { class: 'label', for: 'new-task-room' }, 'Místnost'), room);
+  if (room) room.id = 'new-task-room';
   const general = formError();
   const submit = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Založit úkol');
 
@@ -43,7 +49,11 @@ export function openNewTask() {
           return;
         }
         submitWith(submit, { title, description }, general, async () => {
-          const { task } = await api.createTask({ title: title.value, description: description.value });
+          const { task } = await api.createTask({
+            title: title.value,
+            description: description.value,
+            roomId: room ? selectedRoom(room) : null,
+          });
           upsertTask(task);
           await dialog.close();
           // Rovnou do detailu, kde jde přidat fotky.
@@ -52,6 +62,7 @@ export function openNewTask() {
       },
     },
     title.el,
+    roomField,
     description.el,
     general.el,
     h(

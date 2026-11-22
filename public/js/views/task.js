@@ -1,8 +1,8 @@
 import { api, media } from '../api.js';
 import { append, clear, gear, h, icon } from '../dom.js';
-import { STATUS, STATUSES, count, eventDate, fullDate, isoDate, megabytes } from '../format.js';
+import { GENERAL_ROOM, STATUS, STATUSES, count, eventDate, fullDate, isoDate, megabytes } from '../format.js';
 import { back, route } from '../router.js';
-import { findTask, isMember, removeTask, store, upsertTask } from '../store.js';
+import { findTask, isMember, refreshBoard, removeTask, roomName, setRooms, store, upsertTask } from '../store.js';
 import { confirmDialog } from '../ui/dialog.js';
 import { openLightbox } from '../ui/lightbox.js';
 import { openMenu } from '../ui/menu.js';
@@ -10,6 +10,7 @@ import { segmented } from '../ui/segmented.js';
 import { openSheet } from '../ui/sheet.js';
 import { toast, toastError } from '../ui/toast.js';
 import { showStatus } from './board.js';
+import { roomSelect } from './room-select.js';
 import { DESCRIPTION_MAX, TITLE_MAX } from './task-form.js';
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp'];
@@ -75,8 +76,9 @@ function open(id) {
 
 async function load(view) {
   try {
-    const { task } = await api.task(view.id);
+    const { task, rooms } = await api.task(view.id);
     if (view.sheet.closed) return;
+    if (setRooms(rooms)) refreshBoard();
     view.task = task;
     view.missing = false;
     upsertTask(task);
@@ -151,6 +153,8 @@ function render(view) {
 
   sheet.body.append(h('h2', { class: 'task-title' }, basic.title), statusBlock(view, basic));
   if (!task) return;
+  const room = roomBlock(view);
+  if (room) sheet.body.append(room);
 
   if (task.description) sheet.body.append(h('p', { class: 'task-description' }, linkify(task.description)));
   else if (task.canEdit) {
@@ -208,6 +212,40 @@ async function changeStatus(view, status) {
     if (error.status === 404) load(view);
   }
   return undefined;
+}
+
+// ───── Místnost ─────
+
+function roomBlock(view) {
+  const { task } = view;
+  // Dokud správce žádnou místnost nezaložil, není co ukazovat.
+  if (store.rooms.length === 0) return null;
+  if (!task.canEdit) {
+    return h(
+      'div',
+      { class: 'task-room' },
+      h('span', { class: 'task-room-label' }, 'Místnost'),
+      h('span', null, roomName(task.roomId) ?? GENERAL_ROOM),
+    );
+  }
+  const select = roomSelect({ value: task.roomId, onChange: (roomId) => changeRoom(view, select, roomId) });
+  return h('label', { class: 'task-room' }, h('span', { class: 'task-room-label' }, 'Místnost'), select);
+}
+
+async function changeRoom(view, select, roomId) {
+  const previous = view.task.roomId;
+  try {
+    const { task } = await api.updateTask(view.id, { roomId });
+    upsertTask(task);
+    if (view.sheet.closed) return;
+    view.task = task;
+    refreshHistory(view);
+  } catch (error) {
+    select.value = previous === null ? '' : String(previous);
+    toastError(error);
+    // Místnost mezitím někdo smazal: načte se čerstvý seznam.
+    if (error.code === 'invalid_room' || error.status === 404) load(view);
+  }
 }
 
 // ───── Popis ─────
@@ -590,10 +628,13 @@ const EVENT_LABEL = {
 function historySection(task) {
   const list = h('ol', { class: 'timeline' });
   for (const event of task.events) {
-    const label =
-      event.type === 'status'
-        ? [h('span', { class: 'task-muted' }, STATUS[event.from]?.label ?? ''), ' → ', h('span', { class: `status-${event.to}` }, STATUS[event.to]?.label ?? '')]
-        : EVENT_LABEL[event.type];
+    let label = EVENT_LABEL[event.type];
+    if (event.type === 'status') {
+      label = [h('span', { class: 'task-muted' }, STATUS[event.from]?.label ?? ''), ' → ', h('span', { class: `status-${event.to}` }, STATUS[event.to]?.label ?? '')];
+    } else if (event.type === 'room') {
+      // Název z doby přesunu; místnost se mezitím mohla přejmenovat nebo zmizet.
+      label = event.note ? `Přesunuto do místnosti ${event.note}` : `Přesunuto do ${GENERAL_ROOM}`;
+    }
     list.append(
       h(
         'li',
