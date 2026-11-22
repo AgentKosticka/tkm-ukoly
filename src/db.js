@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 
 // Každá migrace běží v transakci a zvyšuje PRAGMA user_version o jedna.
 // Existující migrace se nemění; nové se přidávají na konec.
-const migrations = [
+export const migrations = [
   `
   CREATE TABLE users (
     id INTEGER PRIMARY KEY,
@@ -65,6 +65,39 @@ const migrations = [
     to_status TEXT,
     created_at INTEGER NOT NULL
   );
+  CREATE INDEX task_events_task ON task_events(task_id, id);
+  `,
+
+  // Místnosti. Úkol bez místnosti (room_id NULL) patří do „Obecné“.
+  // name_key je název převedený na malá písmena; hlídá, aby dvě místnosti
+  // nelišila jen velikost písmen (i u písmen s diakritikou).
+  // Historie úkolu nově umí zaznamenat přesun mezi místnostmi; kvůli tomu se
+  // tabulka task_events zakládá znovu s rozšířeným seznamem typů.
+  `
+  CREATE TABLE rooms (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_key TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL
+  );
+
+  ALTER TABLE tasks ADD COLUMN room_id INTEGER REFERENCES rooms(id) ON DELETE SET NULL;
+  CREATE INDEX tasks_room ON tasks(room_id);
+
+  CREATE TABLE task_events_v2 (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    type TEXT NOT NULL CHECK (type IN ('created', 'status', 'edited', 'photo_added', 'photo_removed', 'room')),
+    from_status TEXT,
+    to_status TEXT,
+    note TEXT,
+    created_at INTEGER NOT NULL
+  );
+  INSERT INTO task_events_v2 (id, task_id, user_id, type, from_status, to_status, created_at)
+    SELECT id, task_id, user_id, type, from_status, to_status, created_at FROM task_events;
+  DROP TABLE task_events;
+  ALTER TABLE task_events_v2 RENAME TO task_events;
   CREATE INDEX task_events_task ON task_events(task_id, id);
   `,
 ];

@@ -74,6 +74,7 @@ export function loadConfig(overrides = {}) {
     djxlPath: process.env.DJXL_PATH || 'djxl',
     maxPhotosPerTask: int('MAX_PHOTOS_PER_TASK', 40, { min: 1, max: 500 }),
     maxPendingUsers: int('MAX_PENDING_USERS', 100, { min: 1, max: 10000 }),
+    maxRooms: int('MAX_ROOMS', 50, { min: 1, max: 500 }),
 
     sessionIdleMs: 14 * 24 * 60 * 60 * 1000,
     sessionMaxMs: 60 * 24 * 60 * 60 * 1000,

@@ -18,6 +18,7 @@ import authRoutes from './routes/auth.js';
 import taskRoutes from './routes/tasks.js';
 import photoRoutes, { mediaRoutes } from './routes/photos.js';
 import adminRoutes from './routes/admin.js';
+import roomRoutes from './routes/rooms.js';
 
 /**
  * Hlavičkám X-Forwarded-* se věří jen tehdy, když spojení přišlo z adresy
@@ -56,7 +57,7 @@ export async function buildApp(config) {
   const photos = await createPhotoStore(config, app.log);
 
   const insertEvent = db.prepare(
-    'INSERT INTO task_events (task_id, user_id, type, from_status, to_status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO task_events (task_id, user_id, type, from_status, to_status, created_at, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
   const pendingUsers = db.prepare("SELECT COUNT(*) FROM users WHERE status = 'pending'").pluck();
 
@@ -65,7 +66,7 @@ export async function buildApp(config) {
     config,
     sessions,
     photos,
-    addEvent: (taskId, userId, type, from, to, at) => insertEvent.run(taskId, userId, type, from, to, at),
+    addEvent: (taskId, userId, type, from, to, at, note = null) => insertEvent.run(taskId, userId, type, from, to, at, note),
 
     // Jediné místo, kde se rozhoduje, kdo smí do systému zasahovat. Uživatel
     // se při každém požadavku načítá z databáze znovu, takže zablokování nebo
@@ -171,6 +172,7 @@ export async function buildApp(config) {
       await api.register(authRoutes, routeOptions);
       await api.register(taskRoutes, routeOptions);
       await api.register(photoRoutes, routeOptions);
+      await api.register(roomRoutes, routeOptions);
       await api.register(adminRoutes, routeOptions);
 
       api.setNotFoundHandler(async (_request, reply) =>

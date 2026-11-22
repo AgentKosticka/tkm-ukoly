@@ -40,6 +40,18 @@ function parseDescription(raw) {
   return description;
 }
 
+// Výběr místností z adresy: „0,3,5“, kde 0 znamená úkoly bez místnosti.
+// Bez parametru se vrací všechno.
+const ROOMS_PATTERN = '^(0|[1-9][0-9]{0,9})(,(0|[1-9][0-9]{0,9})){0,63}$';
+
+function roomFilter(raw) {
+  if (raw === undefined) return { all: 1, none: 0, ids: '[]' };
+  const values = [...new Set(raw.split(',').map(Number))];
+  return { all: 0, none: values.includes(0) ? 1 : 0, ids: JSON.stringify(values.filter((id) => id > 0)) };
+}
+
+const ROOM_CONDITION = `(@all = 1 OR (t.room_id IS NULL AND @none = 1) OR t.room_id IN (SELECT value FROM json_each(@ids)))`;
+
 export default async function taskRoutes(app, { ctx }) {
   const { db, photos, requireUser } = ctx;
 
@@ -48,12 +60,14 @@ export default async function taskRoutes(app, { ctx }) {
            (SELECT COUNT(*) FROM photos p WHERE p.task_id = t.id) AS photo_count
     FROM tasks t LEFT JOIN users u ON u.id = t.created_by
     WHERE t.status = @status
+      AND ${ROOM_CONDITION}
       AND (@cursorTime IS NULL OR t.status_changed_at < @cursorTime
            OR (t.status_changed_at = @cursorTime AND t.id < @cursorId))
     ORDER BY t.status_changed_at DESC, t.id DESC
     LIMIT @limit
   `);
-  const counts = db.prepare('SELECT status, COUNT(*) AS n FROM tasks GROUP BY status');
+  const counts = db.prepare(`SELECT t.status, COUNT(*) AS n FROM tasks t WHERE ${ROOM_CONDITION} GROUP BY t.status`);
+  const roomExists = db.prepare('SELECT name FROM rooms WHERE id = ?');
   const coverFor = db.prepare(
     'SELECT id, width, height, color FROM photos WHERE task_id = ? ORDER BY created_at, id LIMIT 1',
   );
@@ -68,16 +82,16 @@ export default async function taskRoutes(app, { ctx }) {
     WHERE p.task_id = ? ORDER BY p.created_at, p.id
   `);
   const eventsFor = db.prepare(`
-    SELECT e.id, e.type, e.from_status, e.to_status, e.created_at, u.username
+    SELECT e.id, e.type, e.from_status, e.to_status, e.note, e.created_at, u.username
     FROM task_events e LEFT JOIN users u ON u.id = e.user_id
     WHERE e.task_id = ? ORDER BY e.id DESC LIMIT 100
   `);
   const insertTask = db.prepare(`
-    INSERT INTO tasks (title, description, status, created_by, created_at, updated_at, status_changed_at)
-    VALUES (?, ?, 'todo', ?, ?, ?, ?)
+    INSERT INTO tasks (title, description, status, room_id, created_by, created_at, updated_at, status_changed_at)
+    VALUES (?, ?, 'todo', ?, ?, ?, ?, ?)
   `);
   const updateTask = db.prepare(`
-    UPDATE tasks SET title = ?, description = ?, status = ?, updated_at = ?, status_changed_at = ? WHERE id = ?
+    UPDATE tasks SET title = ?, description = ?, status = ?, room_id = ?, updated_at = ?, status_changed_at = ? WHERE id = ?
   `);
   const deleteTask = db.prepare('DELETE FROM tasks WHERE id = ?');
   const photoIdsFor = db.prepare('SELECT id FROM photos WHERE task_id = ?').pluck();
@@ -90,6 +104,8 @@ export default async function taskRoutes(app, { ctx }) {
       title: row.title,
       excerpt: row.description.length > 180 ? `${row.description.slice(0, 180).trimEnd()}…` : row.description,
       status: row.status,
+      // null = bez místnosti („Obecné“)
+      roomId: row.room_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       statusChangedAt: row.status_changed_at,
@@ -119,6 +135,8 @@ export default async function taskRoutes(app, { ctx }) {
         type: e.type,
         from: e.from_status ?? undefined,
         to: e.to_status ?? undefined,
+        // U přesunu mezi místnostmi název cílové místnosti v době přesunu.
+        note: e.type === 'room' ? e.note : undefined,
         at: e.created_at,
         user: viewer ? e.username : undefined,
       })),
@@ -127,8 +145,9 @@ export default async function taskRoutes(app, { ctx }) {
     };
   }
 
-  function page(status, viewer, limit, cursor = null) {
+  function page(status, viewer, limit, filter, cursor = null) {
     const rows = listByStatus.all({
+      ...filter,
       status,
       limit: limit + 1,
       cursorTime: cursor ? cursor.time : null,
@@ -153,33 +172,43 @@ export default async function taskRoutes(app, { ctx }) {
           properties: {
             status: { type: 'string', enum: STATUSES },
             cursor: { type: 'string', pattern: '^[0-9]{1,16}\\.[0-9]{1,16}$' },
+            rooms: { type: 'string', pattern: ROOMS_PATTERN },
           },
         },
       },
     },
     async (request) => {
       const viewer = request.viewer;
-      const { status, cursor } = request.query;
+      const { status, cursor, rooms } = request.query;
+      const filter = roomFilter(rooms);
       if (status) {
         const [time, id] = cursor ? cursor.split('.').map(Number) : [];
-        return page(status, viewer, DONE_PAGE, cursor ? { time, id } : null);
+        return page(status, viewer, DONE_PAGE, filter, cursor ? { time, id } : null);
       }
       const total = { todo: 0, doing: 0, done: 0 };
-      for (const row of counts.all()) total[row.status] = row.n;
+      for (const row of counts.all(filter)) total[row.status] = row.n;
       const columns = {
-        todo: page('todo', viewer, OPEN_LIMIT),
-        doing: page('doing', viewer, OPEN_LIMIT),
-        done: page('done', viewer, DONE_PAGE),
+        todo: page('todo', viewer, OPEN_LIMIT, filter),
+        doing: page('doing', viewer, OPEN_LIMIT, filter),
+        done: page('done', viewer, DONE_PAGE, filter),
       };
-      return { counts: total, columns };
+      return { counts: total, columns, rooms: ctx.listRooms() };
     },
   );
 
   app.get('/tasks/:id', { schema: { params: idParams } }, async (request) => {
     const row = getTask.get(request.params.id);
     if (!row) throw notFound('Úkol neexistuje. Možná ho někdo smazal');
-    return { task: detail(row, request.viewer) };
+    return { task: detail(row, request.viewer), rooms: ctx.listRooms() };
   });
+
+  /** Ověří místnost z požadavku; vrací její název, nebo null pro „Obecné“. */
+  function roomName(roomId) {
+    if (roomId === null) return null;
+    const room = roomExists.get(roomId);
+    if (!room) throw badRequest('invalid_room', 'Tahle místnost už neexistuje', { field: 'roomId' });
+    return room.name;
+  }
 
   app.post(
     '/tasks',
@@ -194,6 +223,7 @@ export default async function taskRoutes(app, { ctx }) {
           properties: {
             title: { type: 'string', maxLength: 1000 },
             description: { type: 'string', maxLength: 20000 },
+            roomId: { type: ['integer', 'null'], minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
           },
         },
       },
@@ -201,9 +231,11 @@ export default async function taskRoutes(app, { ctx }) {
     async (request, reply) => {
       const title = parseTitle(request.body.title);
       const description = parseDescription(request.body.description ?? '');
+      const roomId = request.body.roomId ?? null;
       const now = Date.now();
       const id = db.transaction(() => {
-        const taskId = insertTask.run(title, description, request.user.id, now, now, now).lastInsertRowid;
+        roomName(roomId);
+        const taskId = insertTask.run(title, description, roomId, request.user.id, now, now, now).lastInsertRowid;
         ctx.addEvent(taskId, request.user.id, 'created', null, 'todo', now);
         return Number(taskId);
       })();
@@ -226,6 +258,7 @@ export default async function taskRoutes(app, { ctx }) {
             title: { type: 'string', maxLength: 1000 },
             description: { type: 'string', maxLength: 20000 },
             status: { type: 'string', enum: STATUSES },
+            roomId: { type: ['integer', 'null'], minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
           },
         },
       },
@@ -244,15 +277,19 @@ export default async function taskRoutes(app, { ctx }) {
           title: title ?? row.title,
           description: description ?? row.description,
           status: body.status ?? row.status,
+          roomId: body.roomId === undefined ? row.room_id : body.roomId,
         };
         const textChanged = next.title !== row.title || next.description !== row.description;
         const statusChanged = next.status !== row.status;
-        if (!textChanged && !statusChanged) return row;
+        const roomChanged = next.roomId !== row.room_id;
+        if (!textChanged && !statusChanged && !roomChanged) return row;
+        const movedTo = roomChanged ? roomName(next.roomId) : null;
 
         updateTask.run(
           next.title,
           next.description,
           next.status,
+          next.roomId,
           now,
           statusChanged ? now : row.status_changed_at,
           id,
@@ -264,6 +301,7 @@ export default async function taskRoutes(app, { ctx }) {
             last && last.type === 'edited' && last.user_id === request.user.id && now - last.created_at < EDIT_COALESCE_MS;
           if (!repeat) ctx.addEvent(id, request.user.id, 'edited', null, null, now);
         }
+        if (roomChanged) ctx.addEvent(id, request.user.id, 'room', null, null, now, movedTo);
         if (statusChanged) ctx.addEvent(id, request.user.id, 'status', row.status, next.status, now);
         return getTask.get(id);
       })();

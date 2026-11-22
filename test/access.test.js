@@ -35,6 +35,10 @@ describe('oprávnění', () => {
     ['PATCH', `/api/admin/users/${owner.id}`, { role: 'admin' }],
     ['POST', `/api/admin/users/${owner.id}/reset-password`, {}],
     ['DELETE', `/api/admin/users/${owner.id}`],
+    ['GET', '/api/admin/rooms'],
+    ['POST', '/api/admin/rooms', { name: 'Nová místnost' }],
+    ['PATCH', '/api/admin/rooms/1', { name: 'Přejmenovaná' }],
+    ['DELETE', '/api/admin/rooms/1'],
   ];
 
   async function attempt(client, [method, url, body]) {
@@ -47,6 +51,7 @@ describe('oprávnění', () => {
     assert.deepEqual(task, { title: 'Opravit 3D tiskárnu', status: 'todo' });
     assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM photos WHERE task_id = ?').get(taskId).n, 1);
     assert.equal(ctx.db.prepare("SELECT role FROM users WHERE username = 'majitel'").get().role, 'user');
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM rooms').get().n, 0);
   }
 
   test('nepřihlášený návštěvník úkoly vidí, ale nic nezmění', async () => {
