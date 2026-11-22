@@ -37,6 +37,23 @@ function origin(name) {
   return url.origin;
 }
 
+/**
+ * Složka pro fotky na hostiteli, jak ji správce zapsal do .env. Do kontejneru
+ * ji připojuje Compose; aplikace ji zná jen kvůli kontrole a hlášením.
+ *
+ * Musí to být celá cesta. Poměrnou by Compose vyložil vůči složce, ze které
+ * je spuštěný, a ta se u aktualizační služby liší: po první automatické
+ * aktualizaci by se fotky začaly ukládat jinam.
+ */
+function photosHostDir() {
+  const raw = process.env.PHOTOS_HOST_DIR;
+  if (!raw) return null;
+  if (!raw.startsWith('/')) {
+    throw new Error(`PHOTOS_DIR v souboru .env musí být celá cesta začínající lomítkem, ne „${raw}“`);
+  }
+  return raw;
+}
+
 export function loadConfig(overrides = {}) {
   const dataDir = path.resolve(process.env.DATA_DIR || path.join(root, 'data'));
   const config = {
@@ -44,7 +61,10 @@ export function loadConfig(overrides = {}) {
     publicDir: path.join(root, 'public'),
     dataDir,
     dbFile: path.join(dataDir, 'ukoly.db'),
-    photosDir: path.join(dataDir, 'photos'),
+    // Fotky jsou běžně u ostatních dat; PHOTOS_DIR je umístí jinam, třeba na
+    // jiný disk. Dočasné soubory zůstávají u dat.
+    photosDir: process.env.PHOTOS_DIR ? path.resolve(process.env.PHOTOS_DIR) : path.join(dataDir, 'photos'),
+    photosHostDir: photosHostDir(),
     tmpDir: path.join(dataDir, 'tmp'),
     backupDir: path.join(dataDir, 'backups'),
 

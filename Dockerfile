@@ -30,7 +30,8 @@ COPY src ./src
 COPY public ./public
 
 # Data (databáze, fotky, zálohy) žijí ve svazku; aplikace běží bez práv roota.
-RUN mkdir -p /data && chown node:node /data
+# Do /photos se připojuje vlastní složka pro fotky, pokud je nastavená.
+RUN mkdir -p /data /photos && chown node:node /data /photos
 USER node
 
 # ── Testy ─────────────────────────────────────────────────────────────────

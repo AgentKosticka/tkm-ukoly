@@ -38,8 +38,43 @@ export function sniffImageType(buf) {
 
 export const isPhotoId = (value) => typeof value === 'string' && PHOTO_ID.test(value);
 
+/**
+ * Přesune soubor. Složka pro fotky může být na jiném disku než dočasné
+ * soubory a tam přejmenování nejde (EXDEV); pak se soubor zkopíruje.
+ * Existující cíl se nikdy nepřepíše.
+ */
+export async function moveFile(source, target) {
+  try {
+    await fsp.link(source, target);
+  } catch (err) {
+    if (err.code === 'EEXIST') throw err;
+    await fsp.copyFile(source, target, fsp.constants.COPYFILE_EXCL);
+  }
+  await fsp.rm(source, { force: true });
+}
+
+/**
+ * Ověří, že složka pro fotky existuje a jde do ní zapisovat. Bez toho by se
+ * chyba ukázala až při prvním nahrání fotky.
+ */
+async function preparePhotosDir(config) {
+  // Na hostiteli se složka může jmenovat jinak než v kontejneru; v hlášení
+  // je ta, kterou správce zná ze souboru .env.
+  const shown = config.photosHostDir ?? config.photosDir;
+  const probe = path.join(config.photosDir, `.zapis-${crypto.randomBytes(6).toString('hex')}`);
+  try {
+    await fsp.mkdir(config.photosDir, { recursive: true, mode: 0o700 });
+    await fsp.writeFile(probe, '', { flag: 'wx', mode: 0o600 });
+    await fsp.rm(probe, { force: true });
+  } catch (err) {
+    const owner = typeof process.getuid === 'function' ? `${process.getuid()}:${process.getgid()}` : null;
+    const hint = owner ? ` Složka musí patřit uživateli, pod kterým aplikace běží: chown -R ${owner} ${shown}` : '';
+    throw new Error(`Do složky pro fotky ${shown} nejde zapisovat (${err.code ?? err.message}).${hint}`, { cause: err });
+  }
+}
+
 export async function createPhotoStore(config, log) {
-  await fsp.mkdir(config.photosDir, { recursive: true, mode: 0o700 });
+  await preparePhotosDir(config);
   // Po pádu mohly zůstat rozpracované soubory.
   await fsp.rm(config.tmpDir, { recursive: true, force: true });
   await fsp.mkdir(config.tmpDir, { recursive: true, mode: 0o700 });
@@ -270,7 +305,7 @@ export async function createPhotoStore(config, log) {
       const dir = path.dirname(fileFor(id, 'thumb'));
       await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
       const archiveTarget = fileFor(id, 'orig', archive.format);
-      if (archive.file) await fsp.rename(archive.file, archiveTarget);
+      if (archive.file) await moveFile(archive.file, archiveTarget);
       else await fsp.writeFile(archiveTarget, archive.data, { mode: 0o600, flag: 'wx' });
       if (view) await fsp.writeFile(fileFor(id, 'view'), view, { mode: 0o600, flag: 'wx' });
       await fsp.writeFile(fileFor(id, 'thumb'), thumb, { mode: 0o600, flag: 'wx' });
@@ -310,6 +345,18 @@ export async function createPhotoStore(config, log) {
     ingest: (uploadPath) => gate.run(() => ingestNow(uploadPath)),
 
     remove: removeFiles,
+
+    /**
+     * Kolik ze zadaných fotek nemá na disku náhled. Slouží ke kontrole po
+     * startu: fotky v databázi, které ve složce nejsou, znamenají nejspíš
+     * přesměrovanou složku bez zkopírovaných souborů.
+     */
+    async countMissing(ids) {
+      const present = await Promise.all(
+        ids.filter(isPhotoId).map((id) => fsp.access(fileFor(id, 'thumb')).then(() => true, () => false)),
+      );
+      return present.filter((ok) => !ok).length;
+    },
 
     /**
      * Soubor pro zobrazení na stránce: náhled, nebo větší verze. Malé fotky

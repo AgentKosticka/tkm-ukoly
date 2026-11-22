@@ -11,6 +11,22 @@ const { db, sessions, photos } = app.ctx;
 
 await ensureAdmin(db, config, app.log);
 
+if (config.photosHostDir) {
+  app.log.info(`Fotky se ukládají do složky ${config.photosHostDir}`);
+}
+// Fotky, které databáze zná, ale ve složce nejsou: nejspíš změněná složka
+// pro fotky bez zkopírování dosavadních souborů.
+{
+  const recent = db.prepare('SELECT id FROM photos ORDER BY created_at DESC LIMIT 200').pluck().all();
+  const missing = await photos.countMissing(recent);
+  if (missing > 0) {
+    app.log.warn(
+      `Ve složce pro fotky ${config.photosHostDir ?? config.photosDir} chybí soubory k ${missing} z ${recent.length} naposledy nahraných fotek. ` +
+        'Pokud jste změnili PHOTOS_DIR, zkopírujte do ní dosavadní fotky (postup je v README)',
+    );
+  }
+}
+
 if (!photos.jxlAvailable) {
   app.log.warn('Bez JPEG XL: originály fotek se ukládají jako očištěný JPEG nebo bezeztrátový WebP');
 }

@@ -27,8 +27,15 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       JXL_MAX_MEGAPIXELS: ${JXL_MAX_MEGAPIXELS:-24}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Vlastní složka pro fotky (PHOTOS_DIR v .env) je v kontejneru připojená
+      # jako /photos. Bez ní zůstávají fotky ve svazku data, v /data/photos.
+      PHOTOS_DIR: ${PHOTOS_DIR:+/photos}
+      PHOTOS_HOST_DIR: ${PHOTOS_DIR:-}
     volumes:
       - data:/data
+      # Když PHOTOS_DIR chybí, připojí se sem podruhé svazek data a aplikace
+      # toto místo nepoužije. Compose totiž neumí připojení podmíněně vynechat.
+      - ${PHOTOS_DIR:-data}:/photos
     networks:
       - proxy
     # Aplikace nemá žádný port vystavený ven; dostane se k ní jen Caddy.

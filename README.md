@@ -99,6 +99,41 @@ Na co si dát pozor:
 
 Zpět na běžný režim se vrátíte smazáním řádku `COMPOSE_FILE` a novým `docker compose up -d`.
 
+### Fotky na jiném disku
+
+Fotky jsou běžně ve svazku Dockeru u ostatních dat. Položkou `PHOTOS_DIR` v `.env` je jde uložit do libovolné složky na serveru, třeba na větší disk:
+
+```
+PHOTOS_DIR=/mnt/velky-disk/ukolnicek-fotky
+```
+
+Postup:
+
+1. Složku vytvořte a předejte uživateli 1000, pod kterým aplikace v kontejneru běží:
+
+   ```bash
+   mkdir -p /mnt/velky-disk/ukolnicek-fotky
+   chown 1000:1000 /mnt/velky-disk/ukolnicek-fotky
+   ```
+
+2. Když už v Úkolníčku nějaké fotky jsou, zastavte aplikaci a zkopírujte je do nové složky. Jinak by se po přepnutí nezobrazily; a fotka nahraná během kopírování by se ztratila:
+
+   ```bash
+   docker compose stop app
+   docker run --rm -v tkm-ukoly_data:/data:ro -v /mnt/velky-disk/ukolnicek-fotky:/cil alpine \
+     sh -c 'cp -a /data/photos/. /cil/ && chown -R 1000:1000 /cil'
+   ```
+
+3. Zapište `PHOTOS_DIR` do `.env` a spusťte `docker compose up -d`.
+
+Na co si dát pozor:
+
+- Cesta musí být celá, od lomítka. S poměrnou cestou se aplikace nespustí.
+- Když do složky nejde zapisovat, aplikace se nespustí a v logu (`docker compose logs app`) řekne proč. Stejně tak po startu upozorní, když ve složce chybí soubory k fotkám, které zná databáze.
+- Použijte podsložku disku, ne přímo místo, kam je disk připojený. Když disk při startu serveru připojený nebude, podsložka nebude existovat, Docker ji založí prázdnou pod rootem a aplikace se odmítne spustit. Fotky tak neskončí omylem na systémovém disku.
+- Ve složce jsou jen fotky. Databáze, její zálohy a dočasné soubory zůstávají ve svazku `tkm-ukoly_data`.
+- Původní fotky ve svazku po zkopírování zůstanou. Smazat je můžete až po přepnutí, když ověříte, že se všechny zobrazují: `docker compose exec app rm -rf /data/photos`. Bez nastaveného `PHOTOS_DIR` by tento příkaz smazal fotky, které se právě používají.
+
 ## Automatické aktualizace
 
 Služba `updater` každých pět minut zjistí, jestli v repozitáři, ze kterého jste projekt naklonovali (`origin`), přibyly změny ve vybrané větvi. Když ano:
@@ -159,7 +194,7 @@ Když je zařízení online, načítá se vždy aktuální verze aplikace; po ak
 
 ## Zálohy
 
-Všechna data jsou ve svazku `tkm-ukoly_data`: databáze `ukoly.db`, fotky ve složce `photos` a denní zálohy databáze za posledních sedm dní ve složce `backups`.
+Všechna data jsou ve svazku `tkm-ukoly_data`: databáze `ukoly.db`, fotky ve složce `photos` a denní zálohy databáze za posledních sedm dní ve složce `backups`. S nastaveným `PHOTOS_DIR` jsou fotky ve zvolené složce a zálohovat je potřeba i ji.
 
 Kopii celého svazku do aktuální složky udělá:
 
@@ -227,6 +262,7 @@ Všechno se nastavuje v souboru `.env`; popis položek je v [.env.example](.env.
 | `TUNNEL_PORT` | `8080` | Port v režimu za tunelem. |
 | `TUNNEL_BIND` | `127.0.0.1` | Adresa hostitele, na které port v režimu za tunelem poslouchá. |
 | `TUNNEL_PROXIES` | místní a soukromé rozsahy | Adresy tunelu, jejichž hlavičkám `X-Forwarded-*` se věří. |
+| `PHOTOS_DIR` | prázdné | Složka na serveru pro fotky. Prázdné znamená svazek Dockeru u ostatních dat. |
 | `PROXY_SUBNET` | `172.30.99.0/29` | Vnitřní síť mezi Caddy a aplikací. |
 | `PUBLIC_ORIGIN` | prázdné | Pevná veřejná adresa pro kontrolu původu požadavků. Za tunelem ji vyplňte. |
 | `JXL_MAX_MEGAPIXELS` | `24` | Největší fotka archivovaná v JPEG XL. |
