@@ -44,6 +44,8 @@ fetch() {
   fi
 }
 
+# Soubory sestavy vyjmenované v COMPOSE_FILE (režim za tunelem) hledá Compose
+# vůči pracovní složce, ne vůči --project-directory; proto to cd výše.
 compose() { docker compose --project-directory "$REPO" "$@"; }
 
 deploy() {

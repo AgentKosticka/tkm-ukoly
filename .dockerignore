@@ -9,7 +9,7 @@ deploy
 docs
 *.md
 *.log
-compose.yml
+compose*.yml
 Dockerfile
 .dockerignore
 .gitignore

@@ -1,0 +1,18 @@
+# Brána v režimu za tunelem (Cloudflare Tunnel, Tailscale Funnel a podobné).
+# Zapíná ho compose.tunnel.yml.
+#
+# HTTPS a certifikát obstarává tunel. Caddy poslouchá na jediném portu přes
+# obyčejné HTTP a tunel na něj požadavky předává.
+{
+	servers {
+		# Adresu klienta a protokol zná jen tunel a posílá je v hlavičkách
+		# X-Forwarded-*. Caddy je převezme, jen když spojení přišlo z těchto
+		# adres; jinak je zahodí a nastaví vlastní. Ke stávající hlavičce
+		# X-Forwarded-For připíše adresu, ze které spojení přišlo.
+		trusted_proxies static {$TUNNEL_PROXIES:private_ranges}
+	}
+}
+
+:80 {
+	import web.caddy
+}

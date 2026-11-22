@@ -60,6 +60,45 @@ SITE_ADDRESS=ukoly.example.cz
 
 a spusťte `docker compose up -d`. Caddy si certifikát obstará a obnovuje sám. Porty 80 a 443 musí být dostupné z internetu.
 
+Nemá-li server veřejnou adresu, použijte režim za tunelem popsaný níže.
+
+### Za tunelem (Cloudflare Tunnel, Tailscale Funnel…)
+
+Když server nemá veřejnou adresu nebo na něm nechcete otevírat porty, může web zveřejnit tunel. V tomto režimu Úkolníček poslouchá na jediném portu přes obyčejné HTTP, a to jen na místní smyčce (`127.0.0.1:8080`). HTTPS a certifikát obstará tunel; porty 80 a 443 se nevystavují.
+
+V `.env` nastavte:
+
+```
+COMPOSE_FILE=compose.yml:compose.tunnel.yml
+TUNNEL_PORT=8080
+PUBLIC_ORIGIN=https://ukoly.example.cz
+```
+
+a spusťte `docker compose up -d --build`. Potom zkontrolujte, že je vystavený jen tento jeden port:
+
+```bash
+docker compose ps caddy
+```
+
+Ve sloupci s porty má být se šipkou jen `127.0.0.1:8080->80/tcp`. Kdyby tam byly i položky jako `0.0.0.0:80->80/tcp` nebo `0.0.0.0:443->443/tcp`, režim se nezapnul celý (nejspíš kvůli staré verzi Docker Compose) a web takhle neprovozujte.
+
+Tunel pak nasměrujte na `http://localhost:8080`:
+
+- **Cloudflare Tunnel:** u veřejné adresy tunelu zvolte službu typu HTTP s adresou `localhost:8080`.
+- **Tailscale Funnel:** `tailscale funnel --bg 8080`.
+
+Běží-li tunel sám v kontejneru, na `localhost` hostitele nedosáhne. Připojte ho do sítě `tkm-ukoly_outside` a jako cíl zadejte `http://caddy:80`.
+
+Na co si dát pozor:
+
+- **`PUBLIC_ORIGIN` vyplňte.** Je to adresa, kterou vidí návštěvník. Aplikace podle ní kontroluje původ požadavků a nemusí se spoléhat na hlavičky od tunelu.
+- **Tunel musí být proxy pro HTTP**, která sama doplní hlavičky `X-Forwarded-For` a `X-Forwarded-Proto`. Cloudflare Tunnel, Tailscale Funnel i ngrok to dělají. Za adresu návštěvníka se bere poslední položka, kterou do `X-Forwarded-For` připsal tunel. Holé přeposílání TCP nestačí: aplikace by adresu návštěvníka neznala a ten by ji mohl podvrhnout.
+- **Port nezveřejňujte.** Kdo se na něj dostane přímo, mimo tunel, může si adresu v hlavičkách vymyslet a obejít tak brzdu na hádání hesel. Proto port ve výchozím stavu poslouchá jen na místní smyčce. Když tunel běží na jiném stroji, nastavte `TUNNEL_BIND` a port zavřete firewallem pro všechny ostatní.
+- Položky `SITE_ADDRESS`, `HTTP_PORT` a `HTTPS_PORT` se v tomto režimu nepoužijí.
+- Je potřeba Docker Compose z roku 2024 nebo novější, který zná značku `!override`; tou se seznam portů nahrazuje.
+
+Zpět na běžný režim se vrátíte smazáním řádku `COMPOSE_FILE` a novým `docker compose up -d`.
+
 ## Automatické aktualizace
 
 Služba `updater` každých pět minut zjistí, jestli v repozitáři, ze kterého jste projekt naklonovali (`origin`), přibyly změny ve vybrané větvi. Když ano:
@@ -106,7 +145,7 @@ Místnosti zakládá správce: v nabídce účtu vpravo nahoře je položka **M�
 - **Android, Chrome a Edge na počítači:** v patičce stránky se objeví tlačítko **Nainstalovat aplikaci**. Stejnou volbu má i nabídka prohlížeče.
 - **iPhone a iPad:** v Safari tlačítko Sdílet a **Přidat na plochu**.
 
-Instalace i běh bez připojení vyžadují HTTPS, tedy nastavenou doménu v `SITE_ADDRESS`. Přes obyčejné HTTP funguje Úkolníček jen jako běžná webová stránka.
+Instalace i běh bez připojení vyžadují HTTPS, tedy nastavenou doménu v `SITE_ADDRESS` nebo provoz za tunelem. Přes obyčejné HTTP funguje Úkolníček jen jako běžná webová stránka.
 
 Bez připojení:
 
@@ -170,7 +209,7 @@ Kódování do JPEG XL potřebuje zhruba 25–50 MB paměti na megapixel. Fotky 
 - Service worker ukládá jen veřejné soubory aplikace a fotky. Na adresy API nesahá.
 - Po pěti špatných heslech se přihlášení z dané adresy na daný účet na 15 minut zablokuje. Účet se nezamyká jen podle jména, aby ho nešlo odstavit hádáním.
 - Jména členů vidí jen přihlášení. Návštěvník vidí úkoly, fotky a místnosti bez autorů.
-- Aplikace běží v kontejneru bez práv roota, se souborovým systémem jen pro čtení a bez přístupu do internetu. Ven je vystavený jen Caddy.
+- Aplikace běží v kontejneru bez práv roota, se souborovým systémem jen pro čtení a bez přístupu do internetu. Ven je vystavený jen Caddy; v režimu za tunelem jen na místní smyčce.
 
 Bez e-mailu nejde heslo obnovit samoobslužně. Zapomenuté heslo řeší správce: v seznamu uživatelů vytvoří dočasné, které si člen po přihlášení změní.
 
@@ -184,8 +223,12 @@ Všechno se nastavuje v souboru `.env`; popis položek je v [.env.example](.env.
 | `HTTP_PORT`, `HTTPS_PORT` | `80`, `443` | Porty na hostiteli. |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | `admin`, náhodné | První správce. |
 | `UPDATE_INTERVAL`, `UPDATE_BRANCH`, `GIT_TOKEN` | `300`, prázdné, prázdné | Automatické aktualizace. |
+| `COMPOSE_FILE` | prázdné | `compose.yml:compose.tunnel.yml` zapne režim za tunelem. |
+| `TUNNEL_PORT` | `8080` | Port v režimu za tunelem. |
+| `TUNNEL_BIND` | `127.0.0.1` | Adresa hostitele, na které port v režimu za tunelem poslouchá. |
+| `TUNNEL_PROXIES` | místní a soukromé rozsahy | Adresy tunelu, jejichž hlavičkám `X-Forwarded-*` se věří. |
 | `PROXY_SUBNET` | `172.30.99.0/29` | Vnitřní síť mezi Caddy a aplikací. |
-| `PUBLIC_ORIGIN` | prázdné | Pevná veřejná adresa pro kontrolu původu požadavků. |
+| `PUBLIC_ORIGIN` | prázdné | Pevná veřejná adresa pro kontrolu původu požadavků. Za tunelem ji vyplňte. |
 | `JXL_MAX_MEGAPIXELS` | `24` | Největší fotka archivovaná v JPEG XL. |
 
 ## Vývoj
@@ -207,12 +250,13 @@ sh deploy/updater/test.sh
 Bez nástrojů `cjxl` a `djxl` (balík `libjxl-tools`) se originály ukládají záložní cestou; testy projdou v obou případech. Celou sadu ve stejném prostředí jako v provozu pustí `docker build --target test .`
 
 ```
-src/          server: účty, úkoly, fotky
-public/       rozhraní: čisté ES moduly a CSS, bez sestavovacího kroku
-test/         testy serveru
-deploy/       Caddy a aktualizační služba
-docs/         snímky pro tento přehled
-compose.yml   provozní sestava
+src/                 server: účty, úkoly, fotky
+public/              rozhraní: čisté ES moduly a CSS, bez sestavovacího kroku
+test/                testy serveru
+deploy/              Caddy a aktualizační služba
+docs/                snímky pro tento přehled
+compose.yml          provozní sestava
+compose.tunnel.yml   úprava sestavy pro režim za tunelem
 ```
 
 ## Licence třetích stran

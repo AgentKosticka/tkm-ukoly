@@ -123,3 +123,105 @@ jobs:
       - name: Úklid
         if: always()
         run: docker compose down -v
+
+  tunel:
+    name: Zkušební nasazení za tunelem
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Připravit .env
+        run: |
+          cp .env.example .env
+          echo "COMPOSE_FILE=compose.yml:compose.tunnel.yml" >> .env
+          echo "TUNNEL_PORT=8123" >> .env
+          echo "ADMIN_PASSWORD=Zkusebni-Heslo-Pro-CI-2026" >> .env
+          echo "UPDATE_INTERVAL=0" >> .env
+      - name: Ověřit konfiguraci
+        run: |
+          set -eu
+          docker compose config --format json > merged.json
+          # Seznam portů se musí nahradit, ne rozšířit.
+          jq -e '
+            .services.caddy.ports
+            | length == 1 and .[0].host_ip == "127.0.0.1" and (.[0].published | tostring) == "8123" and .[0].target == 80' merged.json
+      - name: Spustit a počkat na zdravé služby
+        run: docker compose up -d --build --wait --wait-timeout 240
+      - name: Aktualizační služba vidí stejnou sestavu
+        run: |
+          set -eu
+          # update.sh volá Compose z obrazu aktualizační služby nad složkou
+          # /repo. Kdyby tam COMPOSE_FILE z .env neplatil, příští aktualizace
+          # by Caddy vrátila na porty 80 a 443.
+          docker run --rm -v "$PWD":/repo tkm-ukoly-updater \
+            docker compose --project-directory /repo config --format json > updater.json
+          jq -e '
+            (.services.caddy.ports
+              | length == 1 and .[0].host_ip == "127.0.0.1" and (.[0].published | tostring) == "8123" and .[0].target == 80)
+            and (.services.caddy.command | index("/etc/caddy/Caddyfile.tunnel") != null)
+            and (.services.app.environment.TRUST_PROXY_HOPS | tostring) == "2"' updater.json
+      - name: Vystavený je jediný port a jen na místní smyčce
+        run: |
+          set -eu
+          ports=$(docker inspect "$(docker compose ps -q caddy)" --format '{{json .NetworkSettings.Ports}}')
+          echo "porty Caddy: $ports"
+          echo "$ports" | jq -e '[.[] | select(. != null) | .[]] == [{"HostIp":"127.0.0.1","HostPort":"8123"}]'
+          curl -fsS http://127.0.0.1:8123/api/health | grep -q '"ok":true'
+          curl -fsS http://127.0.0.1:8123/ | grep -q 'Úkolníček'
+          # Přes síťovou adresu stroje se na port nejde připojit.
+          ip=$(hostname -I | awk '{print $1}')
+          echo "adresa stroje: $ip"
+          if curl -s --max-time 3 -o /dev/null "http://$ip:8123/api/health"; then exit 1; fi
+      - name: Hlavičky od tunelu určují protokol i adresu klienta
+        run: |
+          set -eu
+          # Požadavek tak, jak ho předává tunel: veřejné jméno v Host, protokol
+          # v X-Forwarded-Proto a adresa návštěvníka na konci X-Forwarded-For.
+          login() {
+            curl -sS -D - -o /dev/null -X POST http://127.0.0.1:8123/api/auth/login \
+              -H 'Host: ukoly.example.cz' -H 'X-Forwarded-Proto: https' -H "X-Forwarded-For: $1" \
+              -H "Origin: $2" -H 'Content-Type: application/json' -H 'X-Requested-With: ukolnicek' \
+              -d "{\"username\":\"admin\",\"password\":\"$3\"}"
+          }
+          ok=$(login 203.0.113.1 https://ukoly.example.cz Zkusebni-Heslo-Pro-CI-2026)
+          echo "$ok" | head -n 1 | grep -q ' 200'
+          echo "$ok" | grep -i '^set-cookie: __Host-sid=' | grep -qi 'secure'
+          echo "$ok" | grep -qi '^strict-transport-security:'
+          login 203.0.113.1 http://ukoly.example.cz Zkusebni-Heslo-Pro-CI-2026 | head -n 1 | grep -q ' 403'
+          login 203.0.113.1 https://evil.example Zkusebni-Heslo-Pro-CI-2026 | head -n 1 | grep -q ' 403'
+          # Brzda na hádání hesel se řídí položkou od tunelu; co si před ni
+          # připsal návštěvník sám, nehraje roli.
+          for i in 1 2 3 4 5; do
+            login "10.0.0.$i, 203.0.113.7" https://ukoly.example.cz spatne-heslo-123 | head -n 1 | grep -q ' 401'
+          done
+          login '1.2.3.4, 203.0.113.7' https://ukoly.example.cz Zkusebni-Heslo-Pro-CI-2026 | head -n 1 | grep -q ' 429'
+          login '203.0.113.7, 203.0.113.8' https://ukoly.example.cz Zkusebni-Heslo-Pro-CI-2026 | head -n 1 | grep -q ' 200'
+      - name: Bez hlaviček od tunelu běží web přes obyčejné HTTP
+        run: |
+          set -eu
+          out=$(curl -sS -D - -o /dev/null -X POST http://127.0.0.1:8123/api/auth/login \
+            -H 'Origin: http://127.0.0.1:8123' -H 'Content-Type: application/json' -H 'X-Requested-With: ukolnicek' \
+            -d '{"username":"admin","password":"Zkusebni-Heslo-Pro-CI-2026"}')
+          echo "$out" | head -n 1 | grep -q ' 200'
+          echo "$out" | grep -qi '^set-cookie: sid='
+          if echo "$out" | grep -qi '^strict-transport-security:'; then exit 1; fi
+      - name: Tunel v kontejneru dosáhne na Caddy přes síť outside
+        run: |
+          set -eu
+          # HSTS se posílá jen tehdy, když aplikace převzala protokol https.
+          docker run --rm --network tkm-ukoly_outside --entrypoint wget tkm-ukoly-caddy \
+            -S -O /dev/null --header 'X-Forwarded-Proto: https' --header 'X-Forwarded-For: 203.0.113.1' \
+            http://caddy:80/api/health 2>&1 | tee wget.txt
+          grep -qi 'strict-transport-security' wget.txt
+      - name: Aplikace není dostupná mimo Caddy
+        run: |
+          set -eu
+          ports=$(docker inspect "$(docker compose ps -q app)" --format '{{json .NetworkSettings.Ports}}')
+          echo "porty aplikace: $ports"
+          if echo "$ports" | grep -q HostPort; then exit 1; fi
+          if curl -s --max-time 3 -o /dev/null http://localhost:3000/api/health; then exit 1; fi
+      - name: Logy při selhání
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+      - name: Úklid
+        if: always()
+        run: docker compose down -v

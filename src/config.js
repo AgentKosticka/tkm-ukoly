@@ -22,11 +22,9 @@ function oneOf(name, allowed, fallback) {
   return raw;
 }
 
+// Položky oddělené čárkou nebo mezerou.
 function list(name) {
-  return (process.env[name] || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+  return (process.env[name] || '').split(/[\s,]+/).filter(Boolean);
 }
 
 function origin(name) {
@@ -55,7 +53,8 @@ export function loadConfig(overrides = {}) {
     // Adresy nebo rozsahy reverzních proxy, kterým aplikace věří hlavičky
     // X-Forwarded-*. Např. „loopback“ nebo „172.16.0.0/12“. Prázdné = žádná proxy.
     trustProxy: list('TRUST_PROXY'),
-    // Kolik proxy za sebou smí být v řetězu (běžně jedna).
+    // Kolik proxy za sebou smí být v řetězu. Běžně jedna (Caddy); za tunelem
+    // dvě (tunel a Caddy).
     trustProxyHops: int('TRUST_PROXY_HOPS', 1, { min: 1, max: 5 }),
     // Pevně daná veřejná adresa; když chybí, odvozuje se z požadavku.
     publicOrigin: origin('PUBLIC_ORIGIN'),

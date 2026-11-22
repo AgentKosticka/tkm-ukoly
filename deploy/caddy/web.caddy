@@ -1,0 +1,11 @@
+# Společná část obou režimů brány: komprese, strop velikosti a předání aplikaci.
+encode zstd gzip
+
+# Fotka smí mít 20 MB; s rezervou na obálku formuláře.
+request_body {
+	max_size 21MB
+}
+
+reverse_proxy app:3000
+
+header -Server

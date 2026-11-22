@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import proxyAddr from '@fastify/proxy-addr';
+import { trustedProxies } from '../src/app.js';
+import { loadConfig } from '../src/config.js';
 import { ADMIN, PASSWORD, adminClient, approvedUser, startApp } from './helpers.js';
 
 describe('registrace a přihlášení', () => {
@@ -205,6 +208,109 @@ describe('přihlášení přes HTTPS za proxy', () => {
     }
     assert.equal((await attempt('1.2.3.4, 203.0.113.7', ADMIN.password)).status, 429, 'podvržený začátek řetězu nepomůže');
     assert.equal((await attempt('203.0.113.8', ADMIN.password)).status, 200, 'jiná adresa blokovaná není');
+  });
+});
+
+// Režim za tunelem (compose.tunnel.yml): před aplikací stojí Caddy a před ním
+// tunel. Caddy k hlavičce X-Forwarded-For od tunelu připíše adresu, ze které
+// se na něj tunel připojil.
+describe('za tunelem: dvě proxy v řetězu', () => {
+  const CADDY = '172.30.99.2';
+  const TUNNEL = '172.18.0.1';
+  const tunnelConfig = () => {
+    const saved = { proxy: process.env.TRUST_PROXY, hops: process.env.TRUST_PROXY_HOPS };
+    // Přesně v té podobě, v jaké hodnoty předává compose.tunnel.yml.
+    process.env.TRUST_PROXY = '172.30.99.0/29 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7';
+    process.env.TRUST_PROXY_HOPS = '2';
+    try {
+      const { trustProxy, trustProxyHops } = loadConfig();
+      return { trustProxy, trustProxyHops };
+    } finally {
+      for (const [name, value] of [['TRUST_PROXY', saved.proxy], ['TRUST_PROXY_HOPS', saved.hops]]) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  };
+
+  test('seznam důvěryhodných adres jde oddělit mezerami i čárkami', () => {
+    const config = tunnelConfig();
+    assert.equal(config.trustProxyHops, 2);
+    assert.deepEqual(config.trustProxy, [
+      '172.30.99.0/29', '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1/128', 'fc00::/7',
+    ]);
+    const saved = process.env.TRUST_PROXY;
+    process.env.TRUST_PROXY = ' loopback, 10.0.0.0/8 ,172.16.0.0/12 ';
+    try {
+      assert.deepEqual(loadConfig().trustProxy, ['loopback', '10.0.0.0/8', '172.16.0.0/12']);
+    } finally {
+      if (saved === undefined) delete process.env.TRUST_PROXY;
+      else process.env.TRUST_PROXY = saved;
+    }
+  });
+
+  test('adresa klienta je poslední položka, kterou připsal tunel', () => {
+    const trust = trustedProxies(tunnelConfig());
+    const clientOf = (remoteAddress, forwarded) =>
+      proxyAddr({ socket: { remoteAddress }, headers: forwarded ? { 'x-forwarded-for': forwarded } : {} }, trust);
+
+    assert.equal(clientOf(CADDY, `203.0.113.7, ${TUNNEL}`), '203.0.113.7');
+    assert.equal(clientOf(CADDY, `2001:db8::7, ${TUNNEL}`), '2001:db8::7');
+    assert.equal(clientOf(CADDY, `203.0.113.7, fd00:1::1`), '203.0.113.7', 'tunel připojený přes IPv6');
+    // Co klient poslal sám, zůstane před položkou od tunelu a nepoužije se,
+    // ani když se tváří jako soukromá adresa.
+    assert.equal(clientOf(CADDY, `1.2.3.4, 203.0.113.7, ${TUNNEL}`), '203.0.113.7');
+    assert.equal(clientOf(CADDY, `10.0.0.1, 127.0.0.1, 203.0.113.7, ${TUNNEL}`), '203.0.113.7');
+    assert.equal(clientOf(CADDY, `1.2.3.4, 192.168.1.20, ${TUNNEL}`), '192.168.1.20');
+    // Tunel hlavičku neposlal (nebo jde o přímý přístup ze stroje): platí
+    // adresa, ze které přišlo spojení na Caddy.
+    assert.equal(clientOf(CADDY, TUNNEL), TUNNEL);
+    // Na Caddy se někdo připojil z veřejné adresy mimo tunel. Caddy pak cizí
+    // hlavičky zahodí; kdyby ne, aplikace té adrese stejně nevěří.
+    assert.equal(clientOf(CADDY, '198.51.100.9'), '198.51.100.9');
+    assert.equal(clientOf(CADDY, '1.2.3.4, 198.51.100.9'), '198.51.100.9');
+    // Spojení, které nepřišlo od Caddy, hlavičkám nevěří vůbec.
+    assert.equal(clientOf('203.0.113.50', `1.2.3.4, ${TUNNEL}`), '203.0.113.50');
+  });
+
+  test('přihlášení přes tunel: Secure cookie, HSTS a brzda podle skutečné adresy', async () => {
+    const ctx = await startApp(tunnelConfig());
+    try {
+      const request = (forwarded, password, origin = 'https://ukoly.example.cz') =>
+        ctx.app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          remoteAddress: CADDY,
+          headers: {
+            host: 'ukoly.example.cz',
+            origin,
+            'content-type': 'application/json',
+            'x-requested-with': 'ukolnicek',
+            'x-forwarded-for': `${forwarded}, ${TUNNEL}`,
+            'x-forwarded-proto': 'https',
+            'x-forwarded-host': 'ukoly.example.cz',
+          },
+          payload: JSON.stringify({ username: ADMIN.username, password }),
+        });
+
+      const ok = await request('203.0.113.1', ADMIN.password);
+      assert.equal(ok.statusCode, 200);
+      const cookie = ok.cookies.find((c) => c.name === '__Host-sid');
+      assert.ok(cookie, 'cookie s prefixem __Host-');
+      assert.equal(cookie.secure, true);
+      assert.match(ok.headers['strict-transport-security'], /max-age=31536000/);
+      // Prohlížeč posílá původ s https; adresa s http by znamenala, že
+      // aplikace protokol od tunelu nepřevzala.
+      assert.equal((await request('203.0.113.1', ADMIN.password, 'http://ukoly.example.cz')).statusCode, 403);
+
+      for (let i = 0; i < 5; i += 1) {
+        assert.equal((await request(`10.0.0.${i}, 203.0.113.7`, 'spatne-heslo-123')).statusCode, 401);
+      }
+      assert.equal((await request('1.2.3.4, 203.0.113.7', ADMIN.password)).statusCode, 429, 'podvržený začátek řetězu nepomůže');
+      assert.equal((await request('203.0.113.7, 203.0.113.8', ADMIN.password)).statusCode, 200, 'jiná adresa blokovaná není');
+    } finally {
+      await ctx.stop();
+    }
   });
 });
 

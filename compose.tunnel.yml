@@ -1,0 +1,30 @@
+# Režim za tunelem: Úkolníček na jediném portu přes obyčejné HTTP, určený pro
+# Cloudflare Tunnel, Tailscale Funnel, ngrok a podobné služby. HTTPS a
+# certifikát obstarává tunel, proto se porty 80 a 443 vůbec nevystavují.
+#
+# Zapíná se v .env řádkem
+#   COMPOSE_FILE=compose.yml:compose.tunnel.yml
+# Tento soubor jen upravuje compose.yml; sám o sobě nestačí.
+# Vyžaduje Docker Compose, který zná značku !override (verze z roku 2024 a novější).
+
+services:
+  app:
+    environment:
+      # V řetězu jsou dvě proxy: tunel a Caddy. Adresa klienta je poslední
+      # položka, kterou do X-Forwarded-For připsal tunel; všemu před ní se
+      # nevěří. Seznam adres musí být stejný jako u služby caddy níže.
+      TRUST_PROXY: "${PROXY_SUBNET:-172.30.99.0/29} ${TUNNEL_PROXIES:-127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7}"
+      TRUST_PROXY_HOPS: 2
+
+  caddy:
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.tunnel", "--adapter", "caddyfile"]
+    environment:
+      # Odkud Caddy přebírá hlavičky X-Forwarded-*: adresy, ze kterých se na
+      # něj připojuje tunel. Výchozí jsou místní a soukromé rozsahy, protože
+      # spojení z hostitele přichází do kontejneru z adresy brány Dockeru.
+      TUNNEL_PROXIES: "${TUNNEL_PROXIES:-127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7}"
+    # Jediný port, a to jen na místní smyčce: dostane se na něj tunel běžící
+    # na tomtéž stroji, nikdo jiný. Značka !override seznam portů z
+    # compose.yml nahradí; bez ní by se k němu jen přidal.
+    ports: !override
+      - "${TUNNEL_BIND:-127.0.0.1}:${TUNNEL_PORT:-8080}:80"

@@ -25,7 +25,7 @@ import roomRoutes from './routes/rooms.js';
  * uvedené v TRUST_PROXY, a jen pro daný počet skoků. Cokoliv dál v řetězu
  * mohl podvrhnout klient.
  */
-function trustedProxies(config) {
+export function trustedProxies(config) {
   if (config.trustProxy.length === 0) return false;
   const allowed = proxyAddr.compile(config.trustProxy);
   return (address, hop) => hop < config.trustProxyHops && allowed(address, hop);
