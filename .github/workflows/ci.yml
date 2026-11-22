@@ -85,8 +85,15 @@ jobs:
       - name: Aplikace běží bez práv roota a není dostupná mimo Caddy
         run: |
           set -eu
-          test "$(docker compose exec -T app id -u)" != 0
-          test -z "$(docker compose port app 3000 2>/dev/null || true)"
+          uid=$(docker compose exec -T app id -u)
+          echo "uid aplikace: $uid"
+          test "$uid" != 0
+          # Kontejner aplikace nesmí mít žádný port zveřejněný na hostiteli...
+          ports=$(docker inspect "$(docker compose ps -q app)" --format '{{json .NetworkSettings.Ports}}')
+          echo "porty aplikace: $ports"
+          if echo "$ports" | grep -q HostPort; then exit 1; fi
+          # ...a z hostitele se na něj nejde připojit přímo.
+          if curl -s --max-time 3 -o /dev/null http://localhost:3000/api/health; then exit 1; fi
       - name: Přes HTTPS dostane cookie příznak Secure a cizí původ neprojde
         run: |
           set -eu
